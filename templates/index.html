@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Stock</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1 class="logo">AI Stock</h1>
+      <p class="tagline">AI 기반 주식 분석 시스템</p>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="search-section">
+      <form id="searchForm" class="search-form">
+        <input
+          type="text"
+          id="symbolInput"
+          class="search-input"
+          placeholder="종목 코드 입력 (예: AAPL, TSLA, 005930.KS)"
+          autocomplete="off"
+        >
+        <button type="submit" class="search-btn">AI 분석</button>
+      </form>
+      <div class="quick-symbols">
+        <span class="quick-label">빠른 검색:</span>
+        <button type="button" class="quick-btn" data-symbol="AAPL">AAPL</button>
+        <button type="button" class="quick-btn" data-symbol="TSLA">TSLA</button>
+        <button type="button" class="quick-btn" data-symbol="NVDA">NVDA</button>
+        <button type="button" class="quick-btn" data-symbol="005930.KS">삼성전자</button>
+      </div>
+    </section>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>AI 분석 중...</span>
+    </div>
+
+    <div id="error" class="error-box hidden"></div>
+
+    <section id="result" class="result hidden">
+      <div class="result-header">
+        <div class="stock-info">
+          <h2 id="stockName" class="stock-name"></h2>
+          <span id="stockSymbol" class="stock-symbol"></span>
+        </div>
+        <div class="price-info">
+          <span id="stockPrice" class="stock-price"></span>
+          <span id="stockChange" class="stock-change"></span>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card ai-card">
+          <h3 class="card-title">AI 분석 결과</h3>
+          <div class="score-wrap">
+            <div id="scoreCircle" class="score-circle">
+              <span id="scoreValue" class="score-value"></span>
+            </div>
+            <div class="score-detail">
+              <span id="recommendation" class="recommendation"></span>
+              <ul id="signals" class="signals"></ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="card stats-card">
+          <h3 class="card-title">기본 정보</h3>
+          <dl class="stats-list">
+            <div class="stat-row">
+              <dt>시가총액</dt>
+              <dd id="marketCap">-</dd>
+            </div>
+            <div class="stat-row">
+              <dt>PER</dt>
+              <dd id="peRatio">-</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="card chart-card">
+          <h3 class="card-title">3개월 가격 추이</h3>
+          <canvas id="priceChart"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>AI Stock &mdash; 투자 판단은 본인 책임입니다. 본 시스템은 참고용 분석만 제공합니다.</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
