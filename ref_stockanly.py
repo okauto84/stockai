@@ -50,16 +50,16 @@ MA_COLORS = {
 }
 MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 MA_WINDOWS = [10, 20, 30, 50, 100, 150]
-CHART_HEIGHT = 280
+CHART_HEIGHT = 560
 CHART_MONTHS = 3
 
 
 def chart_x_encoding() -> alt.X:
-    """날짜 포맷 X축 (예: 2026.08.31)"""
+    """날짜 포맷 X축 (예: 08.31, 연도 미표시)"""
     return alt.X(
         "date:T",
         title="날짜",
-        axis=alt.Axis(format="%Y.%m.%d", labelAngle=-45),
+        axis=alt.Axis(format="%m.%d", labelAngle=-45),
     )
 
 
@@ -171,7 +171,7 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
     """종목 종가 차트"""
     chart = (
         alt.Chart(chart_df)
-        .mark_line(color=COLOR_STOCK, strokeWidth=2.5)
+        .mark_line(color=COLOR_STOCK, strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
             y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
@@ -185,7 +185,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     """코스피(좌측)·RS지수(우측) 이중 축 차트"""
     base = alt.Chart(chart_df).encode(x=chart_x_encoding())
 
-    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=2.5).encode(
+    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=1).encode(
         y=alt.Y(
             "코스피:Q",
             title="코스피",
@@ -193,7 +193,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
-    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=2.5).encode(
+    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=1).encode(
         y=alt.Y(
             "RS지수:Q",
             title="RS지수",
@@ -220,7 +220,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
 
     chart = (
         alt.Chart(long_df)
-        .mark_line(strokeWidth=2)
+        .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
             y=alt.Y("값:Q", title="가격", axis=alt.Axis(format=",.0f")),
@@ -231,11 +231,6 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
                     range=[MA_COLORS[label] for label in MA_LABELS],
                 ),
                 legend=None,
-            ),
-            strokeWidth=alt.condition(
-                alt.datum["구분"] == "종가",
-                alt.value(2.5),
-                alt.value(1.8),
             ),
         )
         .properties(height=CHART_HEIGHT)
