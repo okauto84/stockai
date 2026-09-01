@@ -65,12 +65,15 @@ LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 DATE_TOOLTIP = alt.Tooltip("date:T", title="날짜", format="%Y.%m.%d")
 
 
-def chart_x_encoding(show_labels: bool = True) -> alt.X:
+def chart_x_encoding(show_labels: bool = True, *, padding: float | None = None) -> alt.X:
     """날짜 포맷 X축 (예: 08.31, 연도 미표시)"""
     axis = alt.Axis(format="%m.%d", labelAngle=-45, title=None)
     if not show_labels:
         axis = alt.Axis(labels=False, ticks=False, title=None)
-    return alt.X("date:T", axis=axis)
+    kwargs: dict = {"axis": axis}
+    if padding is not None:
+        kwargs["scale"] = alt.Scale(padding=padding)
+    return alt.X("date:T", **kwargs)
 
 
 def chart_zoom() -> alt.selection_interval:
@@ -433,6 +436,8 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
 
     change_scale = alt.Scale(domain=CHANGE_DOMAIN, range=CHANGE_COLORS)
     zoom = chart_zoom()
+    x_hidden = chart_x_encoding(show_labels=False, padding=0.05)
+    x_visible = chart_x_encoding(show_labels=True, padding=0.05)
     price_y = y_encoding("종가", "종가", chart_df["종가"])
     volume_y = y_encoding("거래량", "거래량", volume_df["거래량"])
 
@@ -440,7 +445,7 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
         alt.Chart(price_segments)
         .mark_line(strokeWidth=1)
         .encode(
-            x=chart_x_encoding(show_labels=False),
+            x=x_hidden,
             y=price_y,
             color=alt.Color("증감:N", scale=change_scale, legend=LEGEND_BOTTOM),
             detail="segment:N",
@@ -450,7 +455,7 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
         alt.Chart(price_points)
         .mark_circle(opacity=0, size=80)
         .encode(
-            x=chart_x_encoding(show_labels=False),
+            x=x_hidden,
             y=price_y,
             tooltip=[
                 DATE_TOOLTIP,
@@ -458,31 +463,30 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
             ],
         )
     )
-    price_chart = (
-        alt.layer(price_line, price_hover)
-        .add_params(zoom)
-        .properties(height=CLOSE_PANEL_HEIGHT)
+    price_chart = alt.layer(price_line, price_hover).properties(
+        height=CLOSE_PANEL_HEIGHT
     )
 
     volume_chart = (
         alt.Chart(volume_df)
         .mark_bar(size=3)
         .encode(
-            x=chart_x_encoding(show_labels=True),
+            x=x_visible,
             y=volume_y,
-            color=alt.Color("증감:N", scale=change_scale, legend=LEGEND_BOTTOM),
+            color=alt.Color("증감:N", scale=change_scale, legend=None),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("거래량:Q", title="거래량", format=",.0f"),
                 alt.Tooltip("증감:N", title="전일대비"),
             ],
         )
-        .add_params(zoom)
         .properties(height=VOLUME_PANEL_HEIGHT)
     )
 
     chart = finalize_chart(
-        alt.vconcat(price_chart, volume_chart).resolve_scale(x="shared")
+        alt.vconcat(price_chart, volume_chart)
+        .resolve_scale(x="shared", color="shared")
+        .add_params(zoom)
     )
     st.altair_chart(chart, use_container_width=True)
 
