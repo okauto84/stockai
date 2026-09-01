@@ -7,13 +7,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 import urllib3
 
-from url_tracker import (
-    create_tracking_token,
-    decode_tracking_token,
-    read_tracking_logs,
-    track_visit,
-)
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 YAHOO_HEADERS = {
@@ -196,41 +189,6 @@ def format_market_cap(value, prefix: str) -> str:
     return f"{prefix}{value:,.0f}"
 
 
-def handle_url_tracking() -> None:
-    """URL 쿼리 파라미터 기반 트래킹 처리"""
-    params = dict(st.query_params)
-    token = params.get("t")
-
-    if token:
-        try:
-            payload = decode_tracking_token(token)
-            inner_params = payload.get("params", {})
-            track_visit(
-                path=payload.get("path", "/"),
-                method="REDIRECT",
-                query_string="&".join(f"{k}={v}" for k, v in inner_params.items()),
-                extra={"via": "tracking_token"},
-            )
-            symbol = inner_params.get("symbol", "").upper()
-            if symbol:
-                st.session_state["symbol"] = symbol
-                st.query_params.clear()
-                st.query_params["symbol"] = symbol
-        except (ValueError, KeyError, TypeError):
-            st.error("유효하지 않은 트래킹 토큰입니다.")
-        return
-
-    track_visit(
-        path="/",
-        method="GET",
-        query_string="&".join(f"{k}={v}" for k, v in params.items()),
-    )
-
-    symbol = params.get("symbol", "").upper()
-    if symbol:
-        st.session_state["symbol"] = symbol
-
-
 def render_analysis(data: dict) -> None:
     prefix = data["price_prefix"]
     change = data["change_pct"]
@@ -263,43 +221,19 @@ def render_analysis(data: dict) -> None:
         st.line_chart(chart_df["close"], use_container_width=True)
 
 
-def render_sidebar() -> None:
+def render_sidebar() -> str:
     with st.sidebar:
-        st.header("URL 트래킹")
-
-        track_symbol = st.text_input("트래킹 종목", value="AAPL", key="track_symbol")
-        if st.button("트래킹 URL 생성", use_container_width=True):
-            token = create_tracking_token("analyze", symbol=track_symbol.upper())
-            st.code(f"?t={token}", language="text")
-            st.caption("위 링크를 공유하면 종목 분석 페이지로 이동합니다.")
-
-        st.divider()
-        st.subheader("최근 로그")
-        logs = read_tracking_logs(limit=20)
-        if not logs:
-            st.caption("기록된 로그가 없습니다.")
-        else:
-            for item in reversed(logs):
-                record = item["record"]
-                st.text(f"{record.get('ts', '')[:19]} | {record.get('path')} | {record.get('query')}")
+        st.header("AI Stock")
+        return st.radio(
+            "메뉴",
+            ["종목분석", "정보수집"],
+            label_visibility="collapsed",
+        )
 
 
-def main() -> None:
-    st.set_page_config(page_title="AI Stock", page_icon="📈", layout="wide")
-    inject_styles()
-
-    if "symbol" not in st.session_state:
-        st.session_state["symbol"] = ""
-
-    track_key = str(dict(st.query_params))
-    if st.session_state.get("_track_key") != track_key:
-        handle_url_tracking()
-        st.session_state["_track_key"] = track_key
-
-    render_sidebar()
-
-    st.title("AI Stock")
-    st.caption("AI 기반 주식 분석 시스템")
+def render_stock_analysis_page() -> None:
+    st.title("종목분석")
+    st.caption("AI 기반 주식 분석")
 
     search_col, btn_col = st.columns([5, 1])
     with search_col:
@@ -333,6 +267,87 @@ def main() -> None:
                 st.error(f"분석 중 오류: {e}")
     elif analyze_clicked:
         st.warning("종목 코드를 입력해 주세요.")
+
+
+def render_info_collection_page() -> None:
+    st.title("정보수집")
+    st.caption("종목 기본 정보 및 주가 데이터 수집")
+
+    search_col, btn_col = st.columns([5, 1])
+    with search_col:
+        symbol_input = st.text_input(
+            "수집 종목",
+            value=st.session_state.get("collect_symbol", ""),
+            placeholder="종목 코드 입력 (예: AAPL, TSLA, 005930.KS)",
+            label_visibility="collapsed",
+            key="collect_input",
+        )
+    with btn_col:
+        collect_clicked = st.button("정보 수집", type="primary", use_container_width=True)
+
+    symbol = symbol_input.strip().upper()
+
+    if collect_clicked and symbol:
+        st.session_state["collect_symbol"] = symbol
+        with st.spinner("정보 수집 중..."):
+            try:
+                chart = fetch_chart(symbol)
+                summary = fetch_summary(symbol)
+                prefix = "₩" if chart["currency"] == "KRW" else "$"
+
+                st.subheader(f"{summary.get('name') or chart['name']} ({chart['symbol']})")
+
+                col1, col2, col3 = st.columns(3)
+                col1.metric("통화", chart["currency"])
+                col2.metric("시가총액", format_market_cap(summary.get("market_cap"), prefix))
+                col3.metric("PER", f"{summary['pe_ratio']:.2f}" if summary.get("pe_ratio") else "-")
+
+                st.markdown("### 수집 데이터")
+                info_df = pd.DataFrame([{
+                    "종목코드": chart["symbol"],
+                    "종목명": summary.get("name") or chart["name"],
+                    "통화": chart["currency"],
+                    "시가총액": format_market_cap(summary.get("market_cap"), prefix),
+                    "PER": summary.get("pe_ratio"),
+                    "데이터 건수": len(chart["history"]),
+                }])
+                st.dataframe(info_df, use_container_width=True, hide_index=True)
+
+                history_df = pd.DataFrame(chart["history"])
+                st.markdown("### 주가 이력 (3개월)")
+                st.dataframe(history_df, use_container_width=True, hide_index=True)
+
+                csv = history_df.to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    "CSV 다운로드",
+                    data=csv,
+                    file_name=f"{symbol}_history.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+            except ValueError as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"수집 중 오류: {e}")
+    elif collect_clicked:
+        st.warning("종목 코드를 입력해 주세요.")
+
+
+def main() -> None:
+    st.set_page_config(page_title="AI Stock", page_icon="📈", layout="wide")
+    inject_styles()
+
+    if "symbol" not in st.session_state:
+        st.session_state["symbol"] = ""
+    if "collect_symbol" not in st.session_state:
+        st.session_state["collect_symbol"] = ""
+
+    menu = render_sidebar()
+
+    if menu == "종목분석":
+        render_stock_analysis_page()
+    else:
+        render_info_collection_page()
 
     st.divider()
     st.caption("AI Stock — 투자 판단은 본인 책임입니다. 본 시스템은 참고용 분석만 제공합니다.")
