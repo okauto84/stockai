@@ -19,13 +19,6 @@ KOSPI_LIST_FILE = (
     Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
 )
 
-QUICK_SYMBOLS = [
-    ("AAPL", "AAPL"),
-    ("TSLA", "TSLA"),
-    ("NVDA", "NVDA"),
-    ("005930.KS", "삼성전자"),
-]
-
 ANALYSIS_DAYS = 150
 GRID_VISIBLE_ROWS = 7
 STOCK_LIST_VISIBLE_ROWS = 5
@@ -264,7 +257,7 @@ def render_stock_list_grid() -> None:
     st.caption(
         f"코스피·코스닥 상장 종목 {len(stock_df):,}개 · "
         f"검색 결과 {len(display_df):,}개 · "
-        "행을 선택하면 종목 코드 입력란에 반영됩니다"
+        "행을 선택하면 150일 분석 그리드 및 차트가 표시됩니다"
     )
     selection = st.dataframe(
         display_df,
@@ -392,8 +385,8 @@ def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
     return df[GRID_COLUMNS].reset_index(drop=True)
 
 
-def analyze_stock(symbol: str) -> dict:
-    """주식 데이터 수집 및 AI 기반 기술적 분석"""
+def get_stock_data(symbol: str) -> dict:
+    """선택 종목의 기본 정보 및 150일 분석 그리드 데이터 수집"""
     chart = fetch_chart(symbol)
     summary = fetch_summary(symbol)
     grid = build_analysis_grid(symbol)
@@ -403,48 +396,6 @@ def analyze_stock(symbol: str) -> dict:
     prev = history[-2]["close"] if len(history) > 1 else current
     change_pct = ((current - prev) / prev) * 100
 
-    closes = [h["close"] for h in history]
-    ma20 = sum(closes[-20:]) / min(20, len(closes))
-    ma60 = sum(closes[-60:]) / min(60, len(closes)) if len(closes) >= 60 else None
-
-    signals = []
-    if current > ma20:
-        signals.append("단기 상승 추세 (20일 이동평균선 상회)")
-    else:
-        signals.append("단기 하락 추세 (20일 이동평균선 하회)")
-
-    if ma60 and current > ma60:
-        signals.append("중기 상승 추세 (60일 이동평균선 상회)")
-    elif ma60:
-        signals.append("중기 하락 추세 (60일 이동평균선 하회)")
-
-    if change_pct > 2:
-        signals.append("전일 대비 강한 상승")
-    elif change_pct < -2:
-        signals.append("전일 대비 강한 하락")
-
-    score = 50
-    if current > ma20:
-        score += 15
-    if ma60 and current > ma60:
-        score += 15
-    if change_pct > 0:
-        score += 10
-    if change_pct < -3:
-        score -= 10
-
-    score = max(0, min(100, score))
-
-    if score >= 70:
-        recommendation = "매수 관심"
-        sentiment = "positive"
-    elif score >= 40:
-        recommendation = "관망"
-        sentiment = "neutral"
-    else:
-        recommendation = "주의"
-        sentiment = "negative"
-
     currency = chart["currency"]
     prefix = "₩" if currency == "KRW" else "$"
 
@@ -452,21 +403,16 @@ def analyze_stock(symbol: str) -> dict:
         "symbol": chart["symbol"],
         "name": summary.get("name") or chart["name"],
         "price": current,
-        "currency": currency,
         "price_prefix": prefix,
         "change_pct": round(change_pct, 2),
         "market_cap": summary.get("market_cap"),
         "pe_ratio": summary.get("pe_ratio"),
-        "signals": signals,
-        "score": score,
-        "recommendation": recommendation,
-        "sentiment": sentiment,
-        "history": history,
         "grid": grid,
     }
 
 
-def render_analysis(data: dict) -> None:
+def render_stock_detail(data: dict) -> None:
+    """선택 종목의 150일 분석 그리드 및 차트 출력"""
     prefix = data["price_prefix"]
     change = data["change_pct"]
     change_label = f"{change:+.2f}%"
@@ -520,55 +466,21 @@ def render_analysis(data: dict) -> None:
     )
     render_ma_chart(chart_df)
 
-    st.markdown("### AI 분석 결과")
-    sentiment = data["sentiment"]
-    if sentiment == "positive":
-        st.success(f"점수 {data['score']} · {data['recommendation']}")
-    elif sentiment == "neutral":
-        st.warning(f"점수 {data['score']} · {data['recommendation']}")
-    else:
-        st.error(f"점수 {data['score']} · {data['recommendation']}")
-
-    for signal in data["signals"]:
-        st.markdown(f"- {signal}")
-
 
 def render_page() -> None:
     """종목분석 Streamlit 페이지"""
     st.title("종목분석")
-    st.caption("AI 기반 주식 분석")
+    st.caption("종목 선택 시 150일 분석 그리드 및 차트를 표시합니다")
 
     render_stock_list_grid()
 
-    search_col, btn_col = st.columns([5, 1])
-    with search_col:
-        symbol_input = st.text_input(
-            "종목 코드",
-            placeholder="종목 코드 입력 (예: AAPL, TSLA, 005930.KS)",
-            label_visibility="collapsed",
-            key="symbol",
-        )
-    with btn_col:
-        analyze_clicked = st.button("AI 분석", type="primary", use_container_width=True)
-
-    quick_cols = st.columns(len(QUICK_SYMBOLS))
-    for col, (code, label) in zip(quick_cols, QUICK_SYMBOLS):
-        if col.button(label, use_container_width=True):
-            st.session_state["symbol"] = code
-            symbol_input = code
-            analyze_clicked = True
-
-    symbol = (symbol_input or st.session_state.get("symbol", "")).strip().upper()
-
-    if analyze_clicked and symbol:
-        st.session_state["symbol"] = symbol
-        with st.spinner("AI 분석 중..."):
+    symbol = st.session_state.get("symbol", "").strip().upper()
+    if symbol:
+        with st.spinner("데이터 불러오는 중..."):
             try:
-                result = analyze_stock(symbol)
-                render_analysis(result)
+                result = get_stock_data(symbol)
+                render_stock_detail(result)
             except ValueError as e:
                 st.error(str(e))
             except Exception as e:
-                st.error(f"분석 중 오류: {e}")
-    elif analyze_clicked:
-        st.warning("종목 코드를 입력해 주세요.")
+                st.error(f"데이터 조회 중 오류: {e}")
