@@ -42,6 +42,22 @@ CHART_HEIGHT = 280
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 
 
+def add_date_number(df: pd.DataFrame) -> pd.DataFrame:
+    """차트 X축용 날짜 숫자(YYYYMMDD) 컬럼 추가"""
+    out = df.copy()
+    out["날짜숫자"] = out["date"].dt.strftime("%Y%m%d").astype(int)
+    return out
+
+
+def chart_x_encoding() -> alt.X:
+    """날짜 숫자 X축"""
+    return alt.X(
+        "날짜숫자:Q",
+        title="날짜",
+        axis=alt.Axis(format="d", labelAngle=-45),
+    )
+
+
 def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
     """Yahoo Finance 차트 API로 주가 데이터 수집"""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -175,89 +191,90 @@ def build_ma_5mo_chart_data(symbol: str) -> pd.DataFrame:
     return df[df["date"] >= cutoff].reset_index(drop=True)
 
 
-def build_bottom_legend(labels: list[str], colors: list[str]) -> alt.Chart:
-    """하단 범례 전용 차트"""
-    legend_df = pd.DataFrame({"구분": labels})
-    return (
-        alt.Chart(legend_df)
-        .mark_point(filled=True, size=80)
-        .encode(
-            color=alt.Color(
-                "구분:N",
-                scale=alt.Scale(domain=labels, range=colors),
-                legend=LEGEND_BOTTOM,
-            )
-        )
-        .properties(height=40)
-    )
-
-
 def render_close_3mo_chart(chart_df: pd.DataFrame) -> None:
     """3개월 종목 종가 차트"""
-    df = chart_df.copy()
+    df = add_date_number(chart_df)
     df["구분"] = "종가"
 
-    main = (
+    chart = (
         alt.Chart(df)
         .mark_line(strokeWidth=2)
         .encode(
-            x=alt.X("date:T", title="날짜"),
+            x=chart_x_encoding(),
             y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
             color=alt.Color(
                 "구분:N",
                 scale=alt.Scale(domain=["종가"], range=[COLOR_STOCK]),
-                legend=None,
+                legend=LEGEND_BOTTOM,
             ),
         )
         .properties(height=CHART_HEIGHT)
     )
-    legend = build_bottom_legend(["종가"], [COLOR_STOCK])
-    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
 
 def render_kospi_rs_3mo_chart(chart_df: pd.DataFrame) -> None:
     """3개월 코스피(좌측)·RS지수(우측) 이중 축 차트"""
-    base = alt.Chart(chart_df).encode(x=alt.X("date:T", title="날짜"))
+    df = add_date_number(chart_df)
+    color_scale = alt.Scale(
+        domain=["코스피", "RS지수"],
+        range=[COLOR_KOSPI, COLOR_RS],
+    )
 
-    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=2).encode(
-        y=alt.Y(
-            "코스피:Q",
-            title="코스피",
-            axis=alt.Axis(format=",.0f", orient="left"),
+    kospi_df = df.assign(구분="코스피")
+    rs_df = df.assign(구분="RS지수")
+
+    kospi_line = (
+        alt.Chart(kospi_df)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=chart_x_encoding(),
+            y=alt.Y(
+                "코스피:Q",
+                title="코스피",
+                axis=alt.Axis(format=",.0f", orient="left"),
+            ),
+            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
         )
     )
 
-    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=2).encode(
-        y=alt.Y(
-            "RS지수:Q",
-            title="RS지수",
-            axis=alt.Axis(format=",.0f", orient="right"),
+    rs_line = (
+        alt.Chart(rs_df)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=chart_x_encoding(),
+            y=alt.Y(
+                "RS지수:Q",
+                title="RS지수",
+                axis=alt.Axis(format=",.0f", orient="right"),
+            ),
+            color=alt.Color("구분:N", scale=color_scale, legend=None),
         )
     )
 
-    main = (
+    chart = (
         alt.layer(kospi_line, rs_line)
         .resolve_scale(y="independent")
         .properties(height=CHART_HEIGHT)
     )
-    legend = build_bottom_legend(["코스피", "RS지수"], [COLOR_KOSPI, COLOR_RS])
-    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
 
 def render_ma_5mo_chart(chart_df: pd.DataFrame) -> None:
     """5개월 종가·이동평균선 차트"""
-    long_df = chart_df.melt(
-        id_vars=["date"],
+    df = add_date_number(chart_df)
+    long_df = df.melt(
+        id_vars=["date", "날짜숫자"],
         value_vars=MA_LABELS,
         var_name="구분",
         value_name="값",
     ).dropna(subset=["값"])
 
-    main = (
+    chart = (
         alt.Chart(long_df)
         .mark_line(strokeWidth=2)
         .encode(
-            x=alt.X("date:T", title="날짜"),
+            x=chart_x_encoding(),
             y=alt.Y("값:Q", title="가격", axis=alt.Axis(format=",.0f")),
             color=alt.Color(
                 "구분:N",
@@ -265,15 +282,12 @@ def render_ma_5mo_chart(chart_df: pd.DataFrame) -> None:
                     domain=MA_LABELS,
                     range=[MA_COLORS[label] for label in MA_LABELS],
                 ),
-                legend=None,
+                legend=LEGEND_BOTTOM,
             ),
         )
         .properties(height=CHART_HEIGHT)
     )
-    legend = build_bottom_legend(
-        MA_LABELS, [MA_COLORS[label] for label in MA_LABELS]
-    )
-    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
 
 def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
