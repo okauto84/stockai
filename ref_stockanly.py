@@ -65,6 +65,26 @@ LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 DATE_TOOLTIP = alt.Tooltip("date:T", title="날짜", format="%Y.%m.%d")
 
 
+def chart_x_ordinal_encoding(show_labels: bool = True, *, padding_outer: float = 0.05) -> alt.X:
+    """거래일별 등간격 X축 (막대 그래프 밀착용)"""
+    axis = alt.Axis(labelAngle=-45, title=None)
+    if not show_labels:
+        axis = alt.Axis(labels=False, ticks=False, title=None)
+    return alt.X(
+        "date_label:O",
+        sort=alt.EncodingSortField(field="date", order="ascending"),
+        scale=alt.Scale(paddingInner=0, paddingOuter=padding_outer),
+        axis=axis,
+    )
+
+
+def add_date_label(df: pd.DataFrame) -> pd.DataFrame:
+    """차트용 날짜 라벨(%m.%d) 추가"""
+    labeled = df.copy()
+    labeled["date_label"] = pd.to_datetime(labeled["date"]).dt.strftime("%m.%d")
+    return labeled
+
+
 def chart_x_encoding(show_labels: bool = True, *, padding: float | None = None) -> alt.X:
     """날짜 포맷 X축 (예: 08.31, 연도 미표시)"""
     axis = alt.Axis(format="%m.%d", labelAngle=-45, title=None)
@@ -412,6 +432,7 @@ def build_price_line_segments(chart_df: pd.DataFrame) -> pd.DataFrame:
             segments.append(
                 {
                     "date": row["date"],
+                    "date_label": row["date_label"],
                     "종가": row["종가"],
                     "segment": segment_id,
                     "증감": change,
@@ -430,15 +451,16 @@ def build_volume_change_df(chart_df: pd.DataFrame) -> pd.DataFrame:
 
 def render_close_chart(chart_df: pd.DataFrame) -> None:
     """종목 종가(상단)·거래량(하단) 차트"""
-    price_segments = build_price_line_segments(chart_df)
-    volume_df = build_volume_change_df(chart_df)
-    price_points = chart_df.sort_values("date")[["date", "종가"]]
+    labeled_df = add_date_label(chart_df)
+    price_segments = build_price_line_segments(labeled_df)
+    volume_df = build_volume_change_df(labeled_df)
+    price_points = labeled_df.sort_values("date")[["date", "date_label", "종가"]]
 
     change_scale = alt.Scale(domain=CHANGE_DOMAIN, range=CHANGE_COLORS)
     zoom = chart_zoom()
-    x_hidden = chart_x_encoding(show_labels=False, padding=0.05)
-    x_visible = chart_x_encoding(show_labels=True, padding=0.05)
-    price_y = y_encoding("종가", "종가", chart_df["종가"])
+    x_hidden = chart_x_ordinal_encoding(show_labels=False)
+    x_visible = chart_x_ordinal_encoding(show_labels=True)
+    price_y = y_encoding("종가", "종가", labeled_df["종가"])
     volume_y = y_encoding("거래량", "거래량", volume_df["거래량"])
 
     price_line = (
@@ -469,7 +491,7 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
 
     volume_chart = (
         alt.Chart(volume_df)
-        .mark_bar(size=3)
+        .mark_bar()
         .encode(
             x=x_visible,
             y=volume_y,
