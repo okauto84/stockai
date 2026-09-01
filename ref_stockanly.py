@@ -24,6 +24,10 @@ QUICK_SYMBOLS = [
 ANALYSIS_DAYS = 150
 MA_WINDOW = 10
 RS_WINDOW = 20
+COLOR_STOCK = "#38bdf8"
+COLOR_KOSPI = "#fb923c"
+COLOR_RS = "#a855f7"
+LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 
 
 def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
@@ -131,13 +135,37 @@ def build_price_chart_data(symbol: str) -> pd.DataFrame:
     return chart_df
 
 
+def prepare_grid_chart_df(grid_df: pd.DataFrame) -> pd.DataFrame:
+    """그리드 데이터를 차트용 시계열 DataFrame으로 변환"""
+    df = grid_df.copy()
+    df["date"] = pd.to_datetime(df["날짜"])
+    return df.sort_values("date").reset_index(drop=True)
+
+
+def build_bottom_legend(labels: list[str], colors: list[str]) -> alt.Chart:
+    """하단 범례 전용 차트"""
+    legend_df = pd.DataFrame({"구분": labels})
+    return (
+        alt.Chart(legend_df)
+        .mark_point(filled=True, size=80)
+        .encode(
+            color=alt.Color(
+                "구분:N",
+                scale=alt.Scale(domain=labels, range=colors),
+                legend=LEGEND_BOTTOM,
+            )
+        )
+        .properties(height=40)
+    )
+
+
 def render_price_chart(chart_df: pd.DataFrame) -> None:
     """종목 종가(좌측)와 코스피(우측) 이중 축 차트"""
     base = alt.Chart(chart_df).encode(
         x=alt.X("date:T", title="날짜"),
     )
 
-    stock_line = base.mark_line(color="#38bdf8", strokeWidth=2).encode(
+    stock_line = base.mark_line(color=COLOR_STOCK, strokeWidth=2).encode(
         y=alt.Y(
             "종가:Q",
             title="종가",
@@ -145,7 +173,7 @@ def render_price_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
-    kospi_line = base.mark_line(color="#fb923c", strokeWidth=2).encode(
+    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=2).encode(
         y=alt.Y(
             "코스피:Q",
             title="코스피",
@@ -153,8 +181,57 @@ def render_price_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
-    chart = alt.layer(stock_line, kospi_line).resolve_scale(y="independent")
-    st.altair_chart(chart, use_container_width=True)
+    main = alt.layer(stock_line, kospi_line).resolve_scale(y="independent").properties(height=280)
+    legend = build_bottom_legend(["종가", "코스피"], [COLOR_STOCK, COLOR_KOSPI])
+    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+
+
+def render_kospi_chart(grid_df: pd.DataFrame) -> None:
+    """150일 코스피 지수 차트"""
+    df = prepare_grid_chart_df(grid_df)
+    df["구분"] = "코스피"
+
+    main = (
+        alt.Chart(df)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=alt.X("date:T", title="날짜"),
+            y=alt.Y("코스피:Q", title="코스피", axis=alt.Axis(format=",.0f")),
+            color=alt.Color(
+                "구분:N",
+                scale=alt.Scale(domain=["코스피"], range=[COLOR_KOSPI]),
+                legend=None,
+            ),
+        )
+        .properties(height=240)
+    )
+    legend = build_bottom_legend(["코스피"], [COLOR_KOSPI])
+    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+
+
+def render_rs_chart(grid_df: pd.DataFrame) -> None:
+    """150일 RS지수 차트"""
+    df = prepare_grid_chart_df(grid_df)
+    df["구분"] = "RS지수"
+
+    base_line = alt.Chart(df).encode(x=alt.X("date:T", title="날짜"))
+
+    rs_line = base_line.mark_line(strokeWidth=2).encode(
+        y=alt.Y("RS지수:Q", title="RS지수", axis=alt.Axis(format=",.0f")),
+        color=alt.Color(
+            "구분:N",
+            scale=alt.Scale(domain=["RS지수"], range=[COLOR_RS]),
+            legend=None,
+        ),
+    )
+
+    baseline = base_line.mark_rule(color="#64748b", strokeDash=[4, 4]).encode(
+        y=alt.datum(100),
+    )
+
+    main = alt.layer(rs_line, baseline).properties(height=240)
+    legend = build_bottom_legend(["RS지수", "기준선(100)"], [COLOR_RS, "#64748b"])
+    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
 
 
 def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
@@ -294,6 +371,16 @@ def render_analysis(data: dict) -> None:
     st.markdown("### 3개월 가격 추이")
     st.caption("종목 종가(좌측) · 코스피 지수(우측)")
     render_price_chart(data["price_chart"])
+
+    chart_col1, chart_col2 = st.columns(2)
+    with chart_col1:
+        st.markdown("### 코스피 지수 추이")
+        st.caption(f"최근 {ANALYSIS_DAYS}거래일")
+        render_kospi_chart(grid_df)
+    with chart_col2:
+        st.markdown("### RS지수 추이")
+        st.caption(f"최근 {ANALYSIS_DAYS}거래일 · 코스피 대비 100 기준")
+        render_rs_chart(grid_df)
 
     st.markdown("### AI 분석 결과")
     sentiment = data["sentiment"]
