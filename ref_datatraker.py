@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -11,7 +12,154 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 YAHOO_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 }
+STOCKEASY_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Referer": "https://stockeasy.intellio.kr/stock-analysis/screener",
+    "Origin": "https://stockeasy.intellio.kr",
+}
 SSL_VERIFY = os.getenv("STOCKAI_SSL_VERIFY", "false").lower() == "true"
+STOCKEASY_API_BASE = os.getenv(
+    "STOCKEASY_API_BASE",
+    "https://stockeasy.intellio.kr/stockdata/api/v1/screener",
+)
+STOCKEASY_LOGIN_URL = os.getenv(
+    "STOCKEASY_LOGIN_URL",
+    "https://stockeasy.intellio.kr/api/v1/auth/login",
+)
+STOCKEASY_ID = os.getenv("STOCKEASY_ID", "")
+STOCKEASY_PW = os.getenv("STOCKEASY_PW", "")
+
+SCREENER_ITEMS = [
+    {
+        "label": "강세 선두",
+        "preset": "momentum_leader",
+        "url": "https://stockeasy.intellio.kr/stock-analysis/screener?preset=momentum_leader",
+    },
+    {
+        "label": "추세 시작",
+        "preset": "trend_template",
+        "url": "https://stockeasy.intellio.kr/stock-analysis/screener?preset=trend_template",
+    },
+    {
+        "label": "돌파 대기",
+        "preset": "vcp_breakout",
+        "url": "https://stockeasy.intellio.kr/stock-analysis/screener?preset=vcp_breakout",
+    },
+]
+
+
+def _get_credentials() -> tuple[str, str]:
+    user_id = os.getenv("STOCKEASY_ID", STOCKEASY_ID).strip()
+    password = os.getenv("STOCKEASY_PW", STOCKEASY_PW)
+    return user_id, password
+
+
+def _login_stockeasy(session: requests.Session) -> None:
+    """STOCKEASY_ID / STOCKEASY_PW 로 StockEasy 로그인"""
+    user_id, password = _get_credentials()
+    if not user_id or not password:
+        raise PermissionError(
+            "StockEasy 로그인 정보가 필요합니다. 환경변수 STOCKEASY_ID, STOCKEASY_PW를 설정하세요."
+        )
+
+    login_urls = [
+        STOCKEASY_LOGIN_URL,
+        "https://stockeasy.intellio.kr/api/v1/auth/login",
+        "https://stockeasy.intellio.kr/api/auth/login",
+        "https://stockeasy.intellio.kr/api/v1/users/login",
+    ]
+    payloads = [
+        {"email": user_id, "password": password},
+        {"username": user_id, "password": password},
+        {"id": user_id, "password": password},
+    ]
+
+    last_error = "로그인에 실패했습니다."
+    seen_urls = set()
+
+    for url in login_urls:
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        for payload in payloads:
+            res = session.post(url, json=payload, timeout=20)
+            if res.status_code in (200, 201, 204):
+                if session.cookies or res.cookies:
+                    return
+                body = res.json() if res.content else {}
+                token = body.get("access_token") or body.get("token")
+                if token:
+                    session.headers["Authorization"] = f"Bearer {token}"
+                    return
+            elif res.status_code not in (404, 405):
+                try:
+                    detail = res.json().get("detail", res.text[:120])
+                except ValueError:
+                    detail = res.text[:120]
+                last_error = f"로그인 실패 ({res.status_code}): {detail}"
+
+    raise PermissionError(last_error)
+
+
+def _stockeasy_session() -> requests.Session:
+    cache_key = "stockeasy_auth_session"
+    user_id, _ = _get_credentials()
+
+    if cache_key in st.session_state:
+        cached_id = st.session_state.get("stockeasy_auth_user", "")
+        if cached_id == user_id:
+            return st.session_state[cache_key]
+
+    session = requests.Session()
+    session.verify = SSL_VERIFY
+    session.headers.update(STOCKEASY_HEADERS)
+    _login_stockeasy(session)
+
+    st.session_state[cache_key] = session
+    st.session_state["stockeasy_auth_user"] = user_id
+    return session
+
+
+def fetch_screener_results(preset: str, limit: int = 50) -> dict:
+    """StockEasy 스크리너 API에서 preset별 종목 데이터 수집"""
+    session = _stockeasy_session()
+    session.get(
+        f"https://stockeasy.intellio.kr/stock-analysis/screener?preset={preset}",
+        timeout=15,
+    )
+
+    params = {
+        "preset": preset,
+        "offset": 0,
+        "limit": limit,
+        "fwd_basis": "fy1",
+    }
+    res = session.get(f"{STOCKEASY_API_BASE}/results", params=params, timeout=20)
+    if res.status_code == 401:
+        raise PermissionError(
+            "StockEasy 인증이 만료되었습니다. STOCKEASY_ID, STOCKEASY_PW를 확인하세요."
+        )
+    res.raise_for_status()
+    return res.json()
+
+
+def screener_payload_to_dataframe(payload: dict) -> pd.DataFrame:
+    """스크리너 API 응답을 DataFrame으로 변환"""
+    stocks = payload.get("stocks") or []
+    if not stocks:
+        return pd.DataFrame()
+
+    if isinstance(stocks[0], dict):
+        return pd.DataFrame(stocks)
+
+    columns = payload.get("display_columns") or []
+    if columns and isinstance(columns[0], dict):
+        headers = [col.get("label") or col.get("key") or f"col_{i}" for i, col in enumerate(columns)]
+        return pd.DataFrame(stocks, columns=headers[: len(stocks[0])])
+
+    return pd.DataFrame(stocks)
 
 
 def fetch_chart(symbol: str) -> dict:
@@ -75,19 +223,6 @@ def fetch_summary(symbol: str) -> dict:
         return {}
 
 
-def collect_stock_data(symbol: str) -> dict:
-    """종목 차트·요약 정보 일괄 수집"""
-    chart = fetch_chart(symbol)
-    summary = fetch_summary(symbol)
-    prefix = "₩" if chart["currency"] == "KRW" else "$"
-
-    return {
-        "chart": chart,
-        "summary": summary,
-        "prefix": prefix,
-    }
-
-
 def format_market_cap(value, prefix: str) -> str:
     if not value:
         return "-"
@@ -100,67 +235,60 @@ def format_market_cap(value, prefix: str) -> str:
     return f"{prefix}{value:,.0f}"
 
 
-def render_page() -> None:
-    """정보수집 Streamlit 페이지"""
-    st.title("정보수집")
-    st.caption("종목 기본 정보 및 주가 데이터 수집")
+def render_screener_view(item: dict) -> None:
+    """선택된 스크리너 항목 화면 표시"""
+    st.subheader(item["label"])
+    st.caption(item["url"])
+    st.link_button("StockEasy에서 열기", item["url"], use_container_width=False)
 
-    search_col, btn_col = st.columns([5, 1])
-    with search_col:
-        symbol_input = st.text_input(
-            "수집 종목",
-            value=st.session_state.get("collect_symbol", ""),
-            placeholder="종목 코드 입력 (예: AAPL, TSLA, 005930.KS)",
-            label_visibility="collapsed",
-            key="collect_input",
-        )
-    with btn_col:
-        collect_clicked = st.button("정보 수집", type="primary", use_container_width=True)
+    with st.spinner(f"{item['label']} 데이터 수집 중..."):
+        try:
+            payload = fetch_screener_results(item["preset"])
+            df = screener_payload_to_dataframe(payload)
+            total = payload.get("total_count", len(df))
 
-    symbol = symbol_input.strip().upper()
+            st.metric("수집 종목 수", f"{len(df)} / {total}")
+            if payload.get("last_updated"):
+                st.caption(f"기준 시각: {payload['last_updated']}")
 
-    if collect_clicked and symbol:
-        st.session_state["collect_symbol"] = symbol
-        with st.spinner("정보 수집 중..."):
-            try:
-                data = collect_stock_data(symbol)
-                chart = data["chart"]
-                summary = data["summary"]
-                prefix = data["prefix"]
-
-                st.subheader(f"{summary.get('name') or chart['name']} ({chart['symbol']})")
-
-                col1, col2, col3 = st.columns(3)
-                col1.metric("통화", chart["currency"])
-                col2.metric("시가총액", format_market_cap(summary.get("market_cap"), prefix))
-                col3.metric("PER", f"{summary['pe_ratio']:.2f}" if summary.get("pe_ratio") else "-")
-
+            if df.empty:
+                st.info("수집된 종목 데이터가 없습니다.")
+            else:
                 st.markdown("### 수집 데이터")
-                info_df = pd.DataFrame([{
-                    "종목코드": chart["symbol"],
-                    "종목명": summary.get("name") or chart["name"],
-                    "통화": chart["currency"],
-                    "시가총액": format_market_cap(summary.get("market_cap"), prefix),
-                    "PER": summary.get("pe_ratio"),
-                    "데이터 건수": len(chart["history"]),
-                }])
-                st.dataframe(info_df, use_container_width=True, hide_index=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
 
-                history_df = pd.DataFrame(chart["history"])
-                st.markdown("### 주가 이력 (3개월)")
-                st.dataframe(history_df, use_container_width=True, hide_index=True)
-
-                csv = history_df.to_csv(index=False).encode("utf-8-sig")
+                csv = df.to_csv(index=False).encode("utf-8-sig")
                 st.download_button(
                     "CSV 다운로드",
                     data=csv,
-                    file_name=f"{symbol}_history.csv",
+                    file_name=f"{item['preset']}_screener.csv",
                     mime="text/csv",
                     use_container_width=True,
                 )
-            except ValueError as e:
-                st.error(str(e))
-            except Exception as e:
-                st.error(f"수집 중 오류: {e}")
-    elif collect_clicked:
-        st.warning("종목 코드를 입력해 주세요.")
+        except PermissionError as e:
+            st.warning(str(e))
+        except Exception as e:
+            st.error(f"데이터 수집 오류: {e}")
+
+    st.markdown("### 스크리너 화면")
+    components.iframe(item["url"], height=820, scrolling=True)
+
+
+def render_page() -> None:
+    """정보수집 Streamlit 페이지"""
+    st.title("정보수집")
+    st.caption("StockEasy 스크리너 데이터 수집")
+
+    if "screener_selected" not in st.session_state:
+        st.session_state["screener_selected"] = SCREENER_ITEMS[0]["preset"]
+
+    cols = st.columns(len(SCREENER_ITEMS))
+    for col, item in zip(cols, SCREENER_ITEMS):
+        if col.button(item["label"], use_container_width=True):
+            st.session_state["screener_selected"] = item["preset"]
+
+    selected = next(
+        item for item in SCREENER_ITEMS
+        if item["preset"] == st.session_state["screener_selected"]
+    )
+    render_screener_view(selected)
