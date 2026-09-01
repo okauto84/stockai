@@ -1,20 +1,11 @@
 import json
-import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
-import requests
 import streamlit as st
-import urllib3
+import yfinance as yf
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-YAHOO_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-}
-SSL_VERIFY = os.getenv("STOCKAI_SSL_VERIFY", "false").lower() == "true"
 KOSPI_LIST_FILE = (
     Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
 )
@@ -143,68 +134,53 @@ def finalize_chart(chart: alt.TopLevelSpec) -> alt.TopLevelSpec:
 
 
 def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
-    """Yahoo Finance 차트 API로 주가 데이터 수집"""
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-    params = {"range": range_period, "interval": "1d"}
+    """yfinance로 주가 데이터 수집"""
+    ticker = yf.Ticker(symbol)
+    hist = ticker.history(period=range_period, interval="1d", auto_adjust=False)
 
-    res = requests.get(
-        url, params=params, headers=YAHOO_HEADERS, verify=SSL_VERIFY, timeout=15
-    )
-    res.raise_for_status()
-    data = res.json()
-
-    result = data.get("chart", {}).get("result")
-    if not result:
+    if hist.empty:
         raise ValueError(f"'{symbol}' 종목을 찾을 수 없습니다.")
 
-    meta = result[0]["meta"]
-    timestamps = result[0]["timestamp"]
-    closes = result[0]["indicators"]["quote"][0]["close"]
-    volumes = result[0]["indicators"]["quote"][0]["volume"]
-
     history = []
-    for ts, close, volume in zip(timestamps, closes, volumes):
-        if close is not None:
-            date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    for ts, row in hist.iterrows():
+        close = row["Close"]
+        if pd.notna(close):
+            date = pd.Timestamp(ts).strftime("%Y-%m-%d")
+            volume = row["Volume"]
             history.append(
                 {
                     "date": date,
-                    "close": round(close, 2),
-                    "volume": int(volume) if volume is not None else None,
+                    "close": round(float(close), 2),
+                    "volume": int(volume) if pd.notna(volume) else None,
                 }
             )
 
     if not history:
         raise ValueError(f"'{symbol}' 주가 데이터가 없습니다.")
 
+    try:
+        info = ticker.info or {}
+    except Exception:
+        info = {}
+
     return {
         "symbol": symbol.upper(),
-        "name": meta.get("longName") or meta.get("shortName") or symbol.upper(),
-        "currency": meta.get("currency", "USD"),
+        "name": info.get("longName") or info.get("shortName") or symbol.upper(),
+        "currency": info.get("currency", "USD"),
         "history": history,
     }
 
 
 def fetch_summary(symbol: str) -> dict:
-    """Yahoo Finance 요약 API로 기본 정보 수집"""
-    url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
-    params = {"modules": "summaryDetail,price"}
-
+    """yfinance로 기본 정보 수집"""
     try:
-        res = requests.get(
-            url, params=params, headers=YAHOO_HEADERS, verify=SSL_VERIFY, timeout=15
-        )
-        res.raise_for_status()
-        result = res.json().get("quoteSummary", {}).get("result")
-        if not result:
+        info = yf.Ticker(symbol).info or {}
+        if not info:
             return {}
-
-        detail = result[0].get("summaryDetail", {})
-        price = result[0].get("price", {})
         return {
-            "market_cap": detail.get("marketCap", {}).get("raw"),
-            "pe_ratio": detail.get("trailingPE", {}).get("raw"),
-            "name": price.get("longName") or price.get("shortName"),
+            "market_cap": info.get("marketCap"),
+            "pe_ratio": info.get("trailingPE"),
+            "name": info.get("longName") or info.get("shortName"),
         }
     except Exception:
         return {}
