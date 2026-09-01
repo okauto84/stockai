@@ -162,10 +162,10 @@ def screener_payload_to_dataframe(payload: dict) -> pd.DataFrame:
     return pd.DataFrame(stocks)
 
 
-def fetch_chart(symbol: str) -> dict:
+def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
     """Yahoo Finance 차트 API로 주가 데이터 수집"""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-    params = {"range": "3mo", "interval": "1d"}
+    params = {"range": range_period, "interval": "1d"}
 
     res = requests.get(
         url, params=params, headers=YAHOO_HEADERS, verify=SSL_VERIFY, timeout=15

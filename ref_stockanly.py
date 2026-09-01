@@ -10,11 +10,50 @@ QUICK_SYMBOLS = [
     ("005930.KS", "삼성전자"),
 ]
 
+ANALYSIS_DAYS = 100
+MA_WINDOW = 10
+RS_WINDOW = 20
+
+
+def get_benchmark_symbol(symbol: str) -> str:
+    """종목 시장에 맞는 벤치마크 지수"""
+    upper = symbol.upper()
+    if upper.endswith(".KS") or upper.endswith(".KQ"):
+        return "^KS11"
+    return "^GSPC"
+
+
+def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
+    """최근 N거래일 종가, RS지수, 10일 이동평균선 그리드 생성"""
+    stock = fetch_chart(symbol, range_period="1y")
+    benchmark = get_benchmark_symbol(symbol)
+    index = fetch_chart(benchmark, range_period="1y")
+
+    stock_df = pd.DataFrame(stock["history"]).rename(columns={"close": "종가"})
+    index_df = pd.DataFrame(index["history"])[["date", "close"]].rename(
+        columns={"close": "index_close"}
+    )
+
+    df = stock_df.merge(index_df, on="date", how="inner")
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    df["MA10"] = df["종가"].rolling(MA_WINDOW, min_periods=MA_WINDOW).mean().round(2)
+
+    stock_ret = df["종가"] / df["종가"].shift(RS_WINDOW)
+    index_ret = df["index_close"] / df["index_close"].shift(RS_WINDOW)
+    df["RS지수"] = ((stock_ret / index_ret) * 100).round(2)
+
+    df = df.tail(days).copy()
+    df["날짜"] = df["date"].dt.strftime("%Y-%m-%d")
+    return df[["날짜", "종가", "RS지수", "MA10"]].reset_index(drop=True)
+
 
 def analyze_stock(symbol: str) -> dict:
     """주식 데이터 수집 및 AI 기반 기술적 분석"""
     chart = fetch_chart(symbol)
     summary = fetch_summary(symbol)
+    grid = build_analysis_grid(symbol)
 
     history = chart["history"]
     current = history[-1]["close"]
@@ -80,6 +119,7 @@ def analyze_stock(symbol: str) -> dict:
         "recommendation": recommendation,
         "sentiment": sentiment,
         "history": history,
+        "grid": grid,
     }
 
 
@@ -93,6 +133,28 @@ def render_analysis(data: dict) -> None:
     metric_col1.metric("현재가", f"{prefix}{data['price']:,.2f}", change_label)
     metric_col2.metric("시가총액", format_market_cap(data["market_cap"], prefix))
     metric_col3.metric("PER", f"{data['pe_ratio']:.2f}" if data["pe_ratio"] else "-")
+
+    st.markdown("### 100일 분석 그리드")
+    st.caption(
+        f"현재일 기준 최근 {ANALYSIS_DAYS}거래일 · "
+        f"RS지수={RS_WINDOW}일 상대강도(벤치마크 대비 100) · MA10=10일 이동평균"
+    )
+    grid_df = data["grid"].sort_values("날짜", ascending=False).reset_index(drop=True)
+    st.dataframe(
+        grid_df,
+        use_container_width=True,
+        hide_index=True,
+        height=min(600, 35 * len(grid_df) + 38),
+    )
+
+    csv = grid_df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "그리드 CSV 다운로드",
+        data=csv,
+        file_name=f"{data['symbol']}_analysis_grid.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
 
     col1, col2 = st.columns(2)
 
