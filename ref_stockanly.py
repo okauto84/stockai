@@ -36,23 +36,22 @@ GRID_COLUMNS = [
     "MA100",
     "MA150",
 ]
-COLOR_STOCK = "#1e3a8a"  # 짙은 파란색
-COLOR_KOSPI = "#991b1b"  # 짙은 빨간색
-COLOR_RS = "#ea580c"  # 주황색
+COLOR_STOCK = "#1e3a8a"
+COLOR_KOSPI = "#991b1b"
+COLOR_RS = "#ea580c"
 MA_COLORS = {
     "종가": COLOR_STOCK,
-    "MA10": "#16a34a",
-    "MA20": "#ca8a04",
-    "MA30": "#9333ea",
-    "MA50": "#0f766e",
-    "MA100": "#0284c7",
-    "MA150": "#7c3aed",
+    "MA10": "#22c55e",
+    "MA20": "#eab308",
+    "MA30": "#a855f7",
+    "MA50": "#0d9488",
+    "MA100": "#64748b",
+    "MA150": "#8b5cf6",
 }
 MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 MA_WINDOWS = [10, 20, 30, 50, 100, 150]
 CHART_HEIGHT = 280
 CHART_MONTHS = 3
-LINE_WIDTH = 2.5
 
 
 def chart_x_encoding() -> alt.X:
@@ -160,17 +159,19 @@ def prepare_chart_df(grid_df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values("date").reset_index(drop=True)
 
 
-def slice_chart_period(df: pd.DataFrame, months: int = CHART_MONTHS) -> pd.DataFrame:
-    """현재 날짜 기준 최근 N개월 차트 데이터만 반환"""
+def slice_recent_months(df: pd.DataFrame, months: int = CHART_MONTHS) -> pd.DataFrame:
+    """현재 날짜 기준 최근 N개월 데이터만 반환"""
+    if df.empty:
+        return df
     cutoff = df["date"].max() - pd.DateOffset(months=months)
     return df[df["date"] >= cutoff].reset_index(drop=True)
 
 
 def render_close_chart(chart_df: pd.DataFrame) -> None:
-    """3개월 종목 종가 차트"""
+    """종목 종가 차트"""
     chart = (
         alt.Chart(chart_df)
-        .mark_line(color=COLOR_STOCK, strokeWidth=LINE_WIDTH)
+        .mark_line(color=COLOR_STOCK, strokeWidth=2.5)
         .encode(
             x=chart_x_encoding(),
             y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
@@ -181,10 +182,10 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
 
 
 def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
-    """3개월 코스피(좌측)·RS지수(우측) 이중 축 차트"""
+    """코스피(좌측)·RS지수(우측) 이중 축 차트"""
     base = alt.Chart(chart_df).encode(x=chart_x_encoding())
 
-    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=LINE_WIDTH).encode(
+    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=2.5).encode(
         y=alt.Y(
             "코스피:Q",
             title="코스피",
@@ -192,7 +193,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
-    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=LINE_WIDTH).encode(
+    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=2.5).encode(
         y=alt.Y(
             "RS지수:Q",
             title="RS지수",
@@ -209,7 +210,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
 
 
 def render_ma_chart(chart_df: pd.DataFrame) -> None:
-    """3개월 종가·이동평균선 차트"""
+    """종가·이동평균선 차트"""
     long_df = chart_df.melt(
         id_vars=["date"],
         value_vars=MA_LABELS,
@@ -219,7 +220,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
 
     chart = (
         alt.Chart(long_df)
-        .mark_line(strokeWidth=LINE_WIDTH)
+        .mark_line(strokeWidth=2)
         .encode(
             x=chart_x_encoding(),
             y=alt.Y("값:Q", title="가격", axis=alt.Axis(format=",.0f")),
@@ -230,6 +231,11 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
                     range=[MA_COLORS[label] for label in MA_LABELS],
                 ),
                 legend=None,
+            ),
+            strokeWidth=alt.condition(
+                alt.datum["구분"] == "종가",
+                alt.value(2.5),
+                alt.value(1.8),
             ),
         )
         .properties(height=CHART_HEIGHT)
@@ -373,7 +379,7 @@ def render_analysis(data: dict) -> None:
         use_container_width=True,
     )
 
-    chart_df = slice_chart_period(prepare_chart_df(data["grid"]))
+    chart_df = slice_recent_months(prepare_chart_df(data["grid"]), CHART_MONTHS)
 
     st.markdown(f"### {CHART_MONTHS}개월 종가 추이")
     st.caption(f"분석 그리드 기반 · 현재일 기준 최근 {CHART_MONTHS}개월 종가")
