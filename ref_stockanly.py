@@ -253,7 +253,7 @@ def render_stock_list_grid() -> None:
         st.session_state["stock_list_keyword_applied"],
     )
 
-    st.markdown("### 종목 목록")
+    
     st.caption(
         f"코스피·코스닥 상장 종목 {len(stock_df):,}개 · "
         f"검색 결과 {len(display_df):,}개 · "
@@ -423,7 +423,7 @@ def render_stock_detail(data: dict) -> None:
     metric_col2.metric("시가총액", format_market_cap(data["market_cap"], prefix))
     metric_col3.metric("PER", f"{data['pe_ratio']:.2f}" if data["pe_ratio"] else "-")
 
-    st.markdown("### 150일 분석 그리드")
+    st.markdown("#### 150일 분석 그리드")
     st.caption(
         f"현재일 기준 최근 {ANALYSIS_DAYS}거래일 · "
         f"RS지수={RS_WINDOW}일 상대강도(코스피 대비 100) · "
@@ -448,7 +448,7 @@ def render_stock_detail(data: dict) -> None:
 
     chart_df = slice_recent_months(prepare_chart_df(data["grid"]), CHART_MONTHS)
 
-    st.markdown(f"### {CHART_MONTHS}개월 종가 추이")
+    st.markdown(f"#### {CHART_MONTHS}개월 종가 추이")
     st.caption(f"분석 그리드 기반 · 현재일 기준 최근 {CHART_MONTHS}개월 종가")
     render_close_chart(chart_df)
 
@@ -459,7 +459,7 @@ def render_stock_detail(data: dict) -> None:
     )
     render_kospi_rs_chart(chart_df)
 
-    st.markdown(f"### {CHART_MONTHS}개월 종가·이동평균선")
+    st.markdown(f"#### {CHART_MONTHS}개월 종가·이동평균선")
     st.caption(
         f"분석 그리드 기반 · 최근 {CHART_MONTHS}개월 · "
         "종가 · MA10/20/30/50/100/150"
@@ -469,7 +469,6 @@ def render_stock_detail(data: dict) -> None:
 
 def render_page() -> None:
     """종목분석 Streamlit 페이지"""
-    st.title("종목분석")
     st.caption("종목 선택 시 150일 분석 그리드 및 차트를 표시합니다")
 
     render_stock_list_grid()
