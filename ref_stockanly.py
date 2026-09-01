@@ -26,6 +26,7 @@ RS_WINDOW = 20
 GRID_COLUMNS = [
     "날짜",
     "종가",
+    "거래량",
     "코스피",
     "RS지수",
     "MA10",
@@ -35,6 +36,8 @@ GRID_COLUMNS = [
     "MA100",
     "MA150",
 ]
+COLOR_GRID_UP = "#dc2626"
+COLOR_GRID_DOWN = "#2563eb"
 COLOR_STOCK = "#1e3a8a"
 COLOR_KOSPI = "#991b1b"
 COLOR_RS = "#ea580c"
@@ -58,7 +61,7 @@ def chart_x_encoding() -> alt.X:
     """날짜 포맷 X축 (예: 08.31, 연도 미표시)"""
     return alt.X(
         "date:T",
-        title="날짜",
+        title=None,
         axis=alt.Axis(format="%m.%d", labelAngle=-45),
     )
 
@@ -81,12 +84,19 @@ def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
     meta = result[0]["meta"]
     timestamps = result[0]["timestamp"]
     closes = result[0]["indicators"]["quote"][0]["close"]
+    volumes = result[0]["indicators"]["quote"][0]["volume"]
 
     history = []
-    for ts, close in zip(timestamps, closes):
+    for ts, close, volume in zip(timestamps, closes, volumes):
         if close is not None:
             date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-            history.append({"date": date, "close": round(close, 2)})
+            history.append(
+                {
+                    "date": date,
+                    "close": round(close, 2),
+                    "volume": int(volume) if volume is not None else None,
+                }
+            )
 
     if not history:
         raise ValueError(f"'{symbol}' 주가 데이터가 없습니다.")
@@ -150,6 +160,38 @@ def format_grid_display(df: pd.DataFrame) -> pd.DataFrame:
             continue
         display[col] = display[col].apply(lambda x: format_with_comma(x))
     return display
+
+
+def style_analysis_grid(grid_df: pd.DataFrame) -> pd.io.formats.style.Styler:
+    """종가·거래량 전일 대비 증감 색상 적용 (상승=빨강, 하락=파랑)"""
+    display = format_grid_display(grid_df)
+    chronological = grid_df.sort_values("날짜").reset_index(drop=True)
+
+    color_map: dict[tuple[str, str], str] = {}
+    for idx in range(1, len(chronological)):
+        date = chronological.loc[idx, "날짜"]
+        for column in ("종가", "거래량"):
+            current = chronological.loc[idx, column]
+            previous = chronological.loc[idx - 1, column]
+            if pd.isna(current) or pd.isna(previous):
+                continue
+            if current > previous:
+                color_map[(date, column)] = COLOR_GRID_UP
+            elif current < previous:
+                color_map[(date, column)] = COLOR_GRID_DOWN
+
+    columns = list(display.columns)
+
+    def highlight(row: pd.Series) -> list[str]:
+        date = row["날짜"]
+        return [
+            f"color: {color_map[(date, column)]}"
+            if (date, column) in color_map
+            else ""
+            for column in columns
+        ]
+
+    return display.style.apply(highlight, axis=1)
 
 
 @st.cache_data
@@ -384,7 +426,9 @@ def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
     stock = fetch_chart(symbol, range_period="2y")
     kospi = fetch_chart("^KS11", range_period="2y")
 
-    stock_df = pd.DataFrame(stock["history"]).rename(columns={"close": "종가"})
+    stock_df = pd.DataFrame(stock["history"]).rename(
+        columns={"close": "종가", "volume": "거래량"}
+    )
     kospi_df = pd.DataFrame(kospi["history"])[["date", "close"]].rename(
         columns={"close": "코스피"}
     )
@@ -453,7 +497,7 @@ def render_stock_detail(data: dict) -> None:
     )
     grid_df = data["grid"].sort_values("날짜", ascending=False).reset_index(drop=True)
     st.dataframe(
-        format_grid_display(grid_df),
+        style_analysis_grid(grid_df),
         use_container_width=True,
         hide_index=True,
         height=35 * GRID_VISIBLE_ROWS + 38,
