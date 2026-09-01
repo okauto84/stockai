@@ -36,21 +36,23 @@ GRID_COLUMNS = [
     "MA100",
     "MA150",
 ]
-COLOR_STOCK = "#38bdf8"
-COLOR_KOSPI = "#fb923c"
-COLOR_RS = "#a855f7"
+COLOR_STOCK = "#1e3a8a"  # 짙은 파란색
+COLOR_KOSPI = "#991b1b"  # 짙은 빨간색
+COLOR_RS = "#ea580c"  # 주황색
 MA_COLORS = {
     "종가": COLOR_STOCK,
-    "MA10": "#22c55e",
-    "MA20": "#eab308",
-    "MA30": "#f97316",
-    "MA50": "#ef4444",
-    "MA100": "#06b6d4",
-    "MA150": "#8b5cf6",
+    "MA10": "#16a34a",
+    "MA20": "#ca8a04",
+    "MA30": "#9333ea",
+    "MA50": "#0f766e",
+    "MA100": "#0284c7",
+    "MA150": "#7c3aed",
 }
 MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 MA_WINDOWS = [10, 20, 30, 50, 100, 150]
 CHART_HEIGHT = 280
+CHART_MONTHS = 3
+LINE_WIDTH = 2.5
 
 
 def chart_x_encoding() -> alt.X:
@@ -158,11 +160,17 @@ def prepare_chart_df(grid_df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values("date").reset_index(drop=True)
 
 
+def slice_chart_period(df: pd.DataFrame, months: int = CHART_MONTHS) -> pd.DataFrame:
+    """현재 날짜 기준 최근 N개월 차트 데이터만 반환"""
+    cutoff = df["date"].max() - pd.DateOffset(months=months)
+    return df[df["date"] >= cutoff].reset_index(drop=True)
+
+
 def render_close_chart(chart_df: pd.DataFrame) -> None:
-    """150일 종목 종가 차트"""
+    """3개월 종목 종가 차트"""
     chart = (
         alt.Chart(chart_df)
-        .mark_line(color=COLOR_STOCK, strokeWidth=2)
+        .mark_line(color=COLOR_STOCK, strokeWidth=LINE_WIDTH)
         .encode(
             x=chart_x_encoding(),
             y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
@@ -173,10 +181,10 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
 
 
 def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
-    """150일 코스피(좌측)·RS지수(우측) 이중 축 차트"""
+    """3개월 코스피(좌측)·RS지수(우측) 이중 축 차트"""
     base = alt.Chart(chart_df).encode(x=chart_x_encoding())
 
-    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=2).encode(
+    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=LINE_WIDTH).encode(
         y=alt.Y(
             "코스피:Q",
             title="코스피",
@@ -184,7 +192,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
-    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=2).encode(
+    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=LINE_WIDTH).encode(
         y=alt.Y(
             "RS지수:Q",
             title="RS지수",
@@ -201,7 +209,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
 
 
 def render_ma_chart(chart_df: pd.DataFrame) -> None:
-    """150일 종가·이동평균선 차트"""
+    """3개월 종가·이동평균선 차트"""
     long_df = chart_df.melt(
         id_vars=["date"],
         value_vars=MA_LABELS,
@@ -211,7 +219,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
 
     chart = (
         alt.Chart(long_df)
-        .mark_line(strokeWidth=2)
+        .mark_line(strokeWidth=LINE_WIDTH)
         .encode(
             x=chart_x_encoding(),
             y=alt.Y("값:Q", title="가격", axis=alt.Axis(format=",.0f")),
@@ -365,22 +373,22 @@ def render_analysis(data: dict) -> None:
         use_container_width=True,
     )
 
-    chart_df = prepare_chart_df(data["grid"])
+    chart_df = slice_chart_period(prepare_chart_df(data["grid"]))
 
-    st.markdown(f"### {ANALYSIS_DAYS}일 종가 추이")
-    st.caption(f"분석 그리드 기반 · 현재일 기준 최근 {ANALYSIS_DAYS}거래일 종가")
+    st.markdown(f"### {CHART_MONTHS}개월 종가 추이")
+    st.caption(f"분석 그리드 기반 · 현재일 기준 최근 {CHART_MONTHS}개월 종가")
     render_close_chart(chart_df)
 
-    st.markdown(f"### {ANALYSIS_DAYS}일 코스피·RS지수")
+    st.markdown(f"### {CHART_MONTHS}개월 코스피·RS지수")
     st.caption(
-        f"분석 그리드 기반 · 최근 {ANALYSIS_DAYS}거래일 · "
+        f"분석 그리드 기반 · 최근 {CHART_MONTHS}개월 · "
         f"코스피(좌측) · RS지수(우측, {RS_WINDOW}일 상대강도)"
     )
     render_kospi_rs_chart(chart_df)
 
-    st.markdown(f"### {ANALYSIS_DAYS}일 종가·이동평균선")
+    st.markdown(f"### {CHART_MONTHS}개월 종가·이동평균선")
     st.caption(
-        f"분석 그리드 기반 · 최근 {ANALYSIS_DAYS}거래일 · "
+        f"분석 그리드 기반 · 최근 {CHART_MONTHS}개월 · "
         "종가 · MA10/20/30/50/100/150"
     )
     render_ma_chart(chart_df)
