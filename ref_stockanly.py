@@ -540,18 +540,12 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
 
 
 def render_ma_chart(chart_df: pd.DataFrame) -> None:
-    """종가·이동평균선 차트 (종가>MA150 구간 빨간 체크 표시)"""
+    """종가·이동평균선 차트"""
     zoom = chart_zoom()
     all_values = pd.concat([chart_df[col] for col in MA_LABELS], ignore_index=True)
     y_scale = alt.Scale(domain=y_domain(all_values), nice=False)
     price_y = alt.Y(
         "값:Q",
-        title="가격",
-        scale=y_scale,
-        axis=alt.Axis(format=",.0f"),
-    )
-    close_y = alt.Y(
-        "종가:Q",
         title="가격",
         scale=y_scale,
         axis=alt.Axis(format=",.0f"),
@@ -599,23 +593,8 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
-    breakout_df = chart_df[
-        chart_df["MA150"].notna() & (chart_df["종가"] > chart_df["MA150"])
-    ].copy()
-    breakout_df["signal"] = "MA150 상승"
-
-    checks = (
-        alt.Chart(breakout_df)
-        .mark_text(text="✓", color=COLOR_GRID_UP, fontSize=13, fontWeight="bold", dy=-12)
-        .encode(
-            x=chart_x_encoding(),
-            y=close_y,
-            tooltip=[DATE_TOOLTIP, alt.Tooltip("signal:N", title="")],
-        )
-    )
-
     chart = finalize_chart(
-        alt.layer(ma_lines, close_line, checks)
+        alt.layer(ma_lines, close_line)
         .add_params(zoom)
         .properties(height=CHART_HEIGHT)
     )
