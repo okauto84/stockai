@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timezone
 
+import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
@@ -98,10 +99,10 @@ def format_market_cap(value, prefix: str) -> str:
     return f"{prefix}{value:,.0f}"
 
 
-def format_with_comma(value, decimals: int = 2) -> str:
+def format_with_comma(value, decimals: int = 0) -> str:
     if pd.isna(value):
         return "-"
-    return f"{value:,.{decimals}f}"
+    return f"{round(value):,.{decimals}f}" if decimals == 0 else f"{value:,.{decimals}f}"
 
 
 def format_grid_display(df: pd.DataFrame) -> pd.DataFrame:
@@ -125,11 +126,35 @@ def build_price_chart_data(symbol: str) -> pd.DataFrame:
     if chart_df.empty:
         raise ValueError("종목과 코스피 지수 데이터를 병합할 수 없습니다.")
 
-    base_stock = chart_df["종가"].iloc[0]
-    base_kospi = chart_df["코스피"].iloc[0]
-    chart_df["종가"] = (chart_df["종가"] / base_stock * 100).round(2)
-    chart_df["코스피"] = (chart_df["코스피"] / base_kospi * 100).round(2)
+    chart_df = chart_df.reset_index()
+    chart_df["date"] = pd.to_datetime(chart_df["date"])
     return chart_df
+
+
+def render_price_chart(chart_df: pd.DataFrame) -> None:
+    """종목 종가(좌측)와 코스피(우측) 이중 축 차트"""
+    base = alt.Chart(chart_df).encode(
+        x=alt.X("date:T", title="날짜"),
+    )
+
+    stock_line = base.mark_line(color="#38bdf8", strokeWidth=2).encode(
+        y=alt.Y(
+            "종가:Q",
+            title="종가",
+            axis=alt.Axis(format=",.0f", orient="left"),
+        )
+    )
+
+    kospi_line = base.mark_line(color="#fb923c", strokeWidth=2).encode(
+        y=alt.Y(
+            "코스피:Q",
+            title="코스피",
+            axis=alt.Axis(format=",.0f", orient="right"),
+        )
+    )
+
+    chart = alt.layer(stock_line, kospi_line).resolve_scale(y="independent")
+    st.altair_chart(chart, use_container_width=True)
 
 
 def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
@@ -267,8 +292,8 @@ def render_analysis(data: dict) -> None:
     )
 
     st.markdown("### 3개월 가격 추이")
-    st.caption("종목 종가 vs 코스피 지수 (3개월 시작일 = 100 기준 정규화)")
-    st.line_chart(data["price_chart"], use_container_width=True)
+    st.caption("종목 종가(좌측) · 코스피 지수(우측)")
+    render_price_chart(data["price_chart"])
 
     st.markdown("### AI 분석 결과")
     sentiment = data["sentiment"]
