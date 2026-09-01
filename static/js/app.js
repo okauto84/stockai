@@ -6,12 +6,12 @@ const loading = document.getElementById("loading");
 const errorBox = document.getElementById("error");
 const result = document.getElementById("result");
 
-function formatMarketCap(value) {
+function formatMarketCap(value, prefix) {
   if (!value) return "-";
-  if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
-  if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
-  if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
-  return `$${value.toLocaleString()}`;
+  if (value >= 1e12) return `${prefix}${(value / 1e12).toFixed(2)}T`;
+  if (value >= 1e9) return `${prefix}${(value / 1e9).toFixed(2)}B`;
+  if (value >= 1e6) return `${prefix}${(value / 1e6).toFixed(2)}M`;
+  return `${prefix}${value.toLocaleString()}`;
 }
 
 function showError(msg) {
@@ -54,7 +54,8 @@ async function analyze(symbol) {
 function renderResult(data) {
   document.getElementById("stockName").textContent = data.name;
   document.getElementById("stockSymbol").textContent = data.symbol;
-  document.getElementById("stockPrice").textContent = `$${data.price.toLocaleString()}`;
+  const prefix = data.price_prefix || "$";
+  document.getElementById("stockPrice").textContent = `${prefix}${data.price.toLocaleString()}`;
 
   const changeEl = document.getElementById("stockChange");
   const sign = data.change_pct >= 0 ? "+" : "";
@@ -72,7 +73,7 @@ function renderResult(data) {
   const signalsEl = document.getElementById("signals");
   signalsEl.innerHTML = data.signals.map((s) => `<li>${s}</li>`).join("");
 
-  document.getElementById("marketCap").textContent = formatMarketCap(data.market_cap);
+  document.getElementById("marketCap").textContent = formatMarketCap(data.market_cap, prefix);
   document.getElementById("peRatio").textContent = data.pe_ratio ? data.pe_ratio.toFixed(2) : "-";
 
   renderChart(data.history);
