@@ -28,7 +28,7 @@ QUICK_SYMBOLS = [
 
 ANALYSIS_DAYS = 150
 GRID_VISIBLE_ROWS = 7
-STOCK_LIST_VISIBLE_ROWS = 10
+STOCK_LIST_VISIBLE_ROWS = 5
 RS_WINDOW = 20
 GRID_COLUMNS = [
     "날짜",
@@ -191,6 +191,27 @@ def apply_stock_list_selection(
     st.session_state["symbol"] = selected_row["야후심볼"]
 
 
+def filter_stock_list(
+    stock_df: pd.DataFrame, market_filter: str, keyword: str
+) -> pd.DataFrame:
+    """시장·키워드 조건으로 종목 목록 필터"""
+    filtered_df = stock_df.copy()
+    if market_filter == "ETF":
+        filtered_df = filtered_df[filtered_df["ETF"] == "Y"]
+    elif market_filter != "전체":
+        filtered_df = filtered_df[filtered_df["시장"] == market_filter]
+
+    if keyword:
+        keyword_upper = keyword.upper()
+        filtered_df = filtered_df[
+            filtered_df["종목코드"].str.contains(keyword_upper, na=False)
+            | filtered_df["종목명"].str.contains(keyword, na=False)
+            | filtered_df["야후심볼"].str.contains(keyword_upper, na=False)
+        ]
+
+    return filtered_df.reset_index(drop=True)
+
+
 def render_stock_list_grid() -> None:
     """코스피·코스닥 종목 목록 그리드"""
     if not KOSPI_LIST_FILE.exists():
@@ -203,36 +224,46 @@ def render_stock_list_grid() -> None:
         st.warning("종목 목록 JSON 파일 형식이 올바르지 않습니다.")
         return
 
-    filter_col1, filter_col2 = st.columns([1, 3])
-    with filter_col1:
-        market_filter = st.selectbox(
-            "시장",
-            options=["전체", "KOSPI", "KOSDAQ"],
-            key="stock_list_market_filter",
-        )
-    with filter_col2:
-        keyword = st.text_input(
-            "종목 검색",
-            placeholder="종목코드 또는 종목명 검색",
-            key="stock_list_keyword",
-        ).strip()
+    if "stock_list_market_applied" not in st.session_state:
+        st.session_state["stock_list_market_applied"] = "전체"
+    if "stock_list_keyword_applied" not in st.session_state:
+        st.session_state["stock_list_keyword_applied"] = ""
 
-    filtered_df = stock_df.copy()
-    if market_filter != "전체":
-        filtered_df = filtered_df[filtered_df["시장"] == market_filter]
-    if keyword:
-        keyword_upper = keyword.upper()
-        filtered_df = filtered_df[
-            filtered_df["종목코드"].str.contains(keyword_upper, na=False)
-            | filtered_df["종목명"].str.contains(keyword, na=False)
-            | filtered_df["야후심볼"].str.contains(keyword_upper, na=False)
-        ]
+    market_options = ["전체", "KOSPI", "KOSDAQ", "ETF"]
+    with st.form("stock_list_search_form", clear_on_submit=False):
+        filter_col1, filter_col2, btn_col = st.columns([1, 3, 1])
+        with filter_col1:
+            market_filter = st.selectbox(
+                "시장",
+                options=market_options,
+                index=market_options.index(
+                    st.session_state["stock_list_market_applied"]
+                ),
+            )
+        with filter_col2:
+            keyword = st.text_input(
+                "종목 검색",
+                value=st.session_state["stock_list_keyword_applied"],
+                placeholder="종목코드 또는 종목명 검색",
+            )
+        with btn_col:
+            st.markdown("<div style='height: 1.6rem;'></div>", unsafe_allow_html=True)
+            search_clicked = st.form_submit_button("검색", use_container_width=True)
 
-    display_df = filtered_df.reset_index(drop=True)
+    if search_clicked:
+        st.session_state["stock_list_market_applied"] = market_filter
+        st.session_state["stock_list_keyword_applied"] = keyword.strip()
+
+    display_df = filter_stock_list(
+        stock_df,
+        st.session_state["stock_list_market_applied"],
+        st.session_state["stock_list_keyword_applied"],
+    )
 
     st.markdown("### 종목 목록")
     st.caption(
         f"코스피·코스닥 상장 종목 {len(stock_df):,}개 · "
+        f"검색 결과 {len(display_df):,}개 · "
         "행을 선택하면 종목 코드 입력란에 반영됩니다"
     )
     selection = st.dataframe(

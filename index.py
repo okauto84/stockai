@@ -44,7 +44,6 @@ def main() -> None:
     ref_stockanly.render_page()
 
     st.divider()
-    st.caption("AI Stock — 투자 판단은 본인 책임입니다. 본 시스템은 참고용 분석만 제공합니다.")
 
 
 if __name__ == "__main__":
