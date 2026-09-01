@@ -50,6 +50,7 @@ MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 MA_WINDOWS = [10, 20, 30, 50, 100, 150]
 CHART_HEIGHT = 373
 CHART_MONTHS = 3
+FETCH_PERIOD = "1y"
 CLOSE_PANEL_HEIGHT = 240
 VOLUME_PANEL_HEIGHT = 133
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
@@ -133,7 +134,12 @@ def finalize_chart(chart: alt.TopLevelSpec) -> alt.TopLevelSpec:
     return chart.interactive(bind_y=False)
 
 
-def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
+def fetch_chart(
+    symbol: str,
+    range_period: str = FETCH_PERIOD,
+    *,
+    include_info: bool = True,
+) -> dict:
     """yfinance로 주가 데이터 수집"""
     ticker = yf.Ticker(symbol)
     hist = ticker.history(period=range_period, interval="1d", auto_adjust=False)
@@ -158,32 +164,31 @@ def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
     if not history:
         raise ValueError(f"'{symbol}' 주가 데이터가 없습니다.")
 
-    try:
-        info = ticker.info or {}
-    except Exception:
-        info = {}
+    info: dict = {}
+    if include_info:
+        try:
+            info = ticker.info or {}
+        except Exception:
+            info = {}
 
     return {
         "symbol": symbol.upper(),
         "name": info.get("longName") or info.get("shortName") or symbol.upper(),
         "currency": info.get("currency", "USD"),
+        "market_cap": info.get("marketCap"),
+        "pe_ratio": info.get("trailingPE"),
         "history": history,
     }
 
 
 def fetch_summary(symbol: str) -> dict:
-    """yfinance로 기본 정보 수집"""
-    try:
-        info = yf.Ticker(symbol).info or {}
-        if not info:
-            return {}
-        return {
-            "market_cap": info.get("marketCap"),
-            "pe_ratio": info.get("trailingPE"),
-            "name": info.get("longName") or info.get("shortName"),
-        }
-    except Exception:
-        return {}
+    """yfinance로 기본 정보 수집 (fetch_chart include_info=True와 동일)"""
+    chart = fetch_chart(symbol, include_info=True)
+    return {
+        "market_cap": chart.get("market_cap"),
+        "pe_ratio": chart.get("pe_ratio"),
+        "name": chart.get("name"),
+    }
 
 
 def format_market_cap(value, prefix: str) -> str:
@@ -599,10 +604,16 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
     st.altair_chart(chart, use_container_width=True)
 
 
-def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
+def build_analysis_grid(
+    symbol: str,
+    days: int = ANALYSIS_DAYS,
+    *,
+    stock_chart: dict | None = None,
+    kospi_chart: dict | None = None,
+) -> pd.DataFrame:
     """최근 N거래일 분석 그리드 DataFrame 생성"""
-    stock = fetch_chart(symbol, range_period="2y")
-    kospi = fetch_chart("^KS11", range_period="2y")
+    stock = stock_chart or fetch_chart(symbol)
+    kospi = kospi_chart or fetch_chart("^KS11", include_info=False)
 
     stock_df = pd.DataFrame(stock["history"]).rename(
         columns={"close": "종가", "volume": "거래량"}
@@ -631,26 +642,26 @@ def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
 
 def get_stock_data(symbol: str) -> dict:
     """선택 종목의 기본 정보 및 150일 분석 그리드 데이터 수집"""
-    chart = fetch_chart(symbol)
-    summary = fetch_summary(symbol)
-    grid = build_analysis_grid(symbol)
+    stock = fetch_chart(symbol)
+    kospi = fetch_chart("^KS11", include_info=False)
+    grid = build_analysis_grid(symbol, stock_chart=stock, kospi_chart=kospi)
 
-    history = chart["history"]
+    history = stock["history"]
     current = history[-1]["close"]
     prev = history[-2]["close"] if len(history) > 1 else current
     change_pct = ((current - prev) / prev) * 100
 
-    currency = chart["currency"]
+    currency = stock["currency"]
     prefix = "₩" if currency == "KRW" else "$"
 
     return {
-        "symbol": chart["symbol"],
-        "name": summary.get("name") or chart["name"],
+        "symbol": stock["symbol"],
+        "name": stock["name"],
         "price": current,
         "price_prefix": prefix,
         "change_pct": round(change_pct, 2),
-        "market_cap": summary.get("market_cap"),
-        "pe_ratio": summary.get("pe_ratio"),
+        "market_cap": stock.get("market_cap"),
+        "pe_ratio": stock.get("pe_ratio"),
         "grid": grid,
     }
 
