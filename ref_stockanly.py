@@ -49,8 +49,9 @@ MA_COLORS = {
 }
 MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 MA_WINDOWS = [10, 20, 30, 50, 100, 150]
-CHART_HEIGHT = 560
+CHART_HEIGHT = 373
 CHART_MONTHS = 3
+LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 
 
 def chart_x_encoding() -> alt.X:
@@ -288,12 +289,18 @@ def slice_recent_months(df: pd.DataFrame, months: int = CHART_MONTHS) -> pd.Data
 
 def render_close_chart(chart_df: pd.DataFrame) -> None:
     """종목 종가 차트"""
+    df = chart_df.assign(구분="종가")
     chart = (
-        alt.Chart(chart_df)
-        .mark_line(color=COLOR_STOCK, strokeWidth=1)
+        alt.Chart(df)
+        .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
             y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
+            color=alt.Color(
+                "구분:N",
+                scale=alt.Scale(domain=["종가"], range=[COLOR_STOCK]),
+                legend=LEGEND_BOTTOM,
+            ),
         )
         .properties(height=CHART_HEIGHT)
     )
@@ -302,21 +309,36 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
 
 def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     """코스피(좌측)·RS지수(우측) 이중 축 차트"""
-    base = alt.Chart(chart_df).encode(x=chart_x_encoding())
+    color_scale = alt.Scale(
+        domain=["코스피", "RS지수"],
+        range=[COLOR_KOSPI, COLOR_RS],
+    )
 
-    kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=1).encode(
-        y=alt.Y(
-            "코스피:Q",
-            title="코스피",
-            axis=alt.Axis(format=",.0f", orient="left"),
+    kospi_line = (
+        alt.Chart(chart_df.assign(구분="코스피"))
+        .mark_line(strokeWidth=1)
+        .encode(
+            x=chart_x_encoding(),
+            y=alt.Y(
+                "코스피:Q",
+                title="코스피",
+                axis=alt.Axis(format=",.0f", orient="left"),
+            ),
+            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
         )
     )
 
-    rs_line = base.mark_line(color=COLOR_RS, strokeWidth=1).encode(
-        y=alt.Y(
-            "RS지수:Q",
-            title="RS지수",
-            axis=alt.Axis(format=",.0f", orient="right"),
+    rs_line = (
+        alt.Chart(chart_df.assign(구분="RS지수"))
+        .mark_line(strokeWidth=1)
+        .encode(
+            x=chart_x_encoding(),
+            y=alt.Y(
+                "RS지수:Q",
+                title="RS지수",
+                axis=alt.Axis(format=",.0f", orient="right"),
+            ),
+            color=alt.Color("구분:N", scale=color_scale, legend=None),
         )
     )
 
@@ -349,7 +371,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
                     domain=MA_LABELS,
                     range=[MA_COLORS[label] for label in MA_LABELS],
                 ),
-                legend=None,
+                legend=LEGEND_BOTTOM,
             ),
         )
         .properties(height=CHART_HEIGHT)
@@ -452,7 +474,7 @@ def render_stock_detail(data: dict) -> None:
     st.caption(f"분석 그리드 기반 · 현재일 기준 최근 {CHART_MONTHS}개월 종가")
     render_close_chart(chart_df)
 
-    st.markdown(f"### {CHART_MONTHS}개월 코스피·RS지수")
+    st.markdown(f"#### {CHART_MONTHS}개월 코스피·RS지수")
     st.caption(
         f"분석 그리드 기반 · 최근 {CHART_MONTHS}개월 · "
         f"코스피(좌측) · RS지수(우측, {RS_WINDOW}일 상대강도)"
