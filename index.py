@@ -1,7 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-import ref_datatraker
 import ref_stockanly
 
 
@@ -28,14 +27,10 @@ def inject_styles() -> None:
     )
 
 
-def render_sidebar() -> str:
+def render_sidebar() -> None:
     with st.sidebar:
         st.header("AI Stock")
-        return st.radio(
-            "메뉴",
-            ["종목분석", "정보수집"],
-            label_visibility="collapsed",
-        )
+        st.caption("종목분석")
 
 
 def main() -> None:
@@ -44,15 +39,9 @@ def main() -> None:
 
     if "symbol" not in st.session_state:
         st.session_state["symbol"] = ""
-    if "collect_symbol" not in st.session_state:
-        st.session_state["collect_symbol"] = ""
 
-    menu = render_sidebar()
-
-    if menu == "종목분석":
-        ref_stockanly.render_page()
-    else:
-        ref_datatraker.render_page()
+    render_sidebar()
+    ref_stockanly.render_page()
 
     st.divider()
     st.caption("AI Stock — 투자 판단은 본인 책임입니다. 본 시스템은 참고용 분석만 제공합니다.")

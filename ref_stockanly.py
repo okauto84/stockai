@@ -1,7 +1,17 @@
-import pandas as pd
-import streamlit as st
+import os
+from datetime import datetime, timezone
 
-from ref_datatraker import fetch_chart, fetch_summary, format_market_cap
+import pandas as pd
+import requests
+import streamlit as st
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+YAHOO_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+}
+SSL_VERIFY = os.getenv("STOCKAI_SSL_VERIFY", "false").lower() == "true"
 
 QUICK_SYMBOLS = [
     ("AAPL", "AAPL"),
@@ -10,17 +20,97 @@ QUICK_SYMBOLS = [
     ("005930.KS", "삼성전자"),
 ]
 
-ANALYSIS_DAYS = 100
+ANALYSIS_DAYS = 150
 MA_WINDOW = 10
 RS_WINDOW = 20
 
 
-def get_benchmark_symbol(symbol: str) -> str:
-    """종목 시장에 맞는 벤치마크 지수"""
-    upper = symbol.upper()
-    if upper.endswith(".KS") or upper.endswith(".KQ"):
-        return "^KS11"
-    return "^GSPC"
+def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
+    """Yahoo Finance 차트 API로 주가 데이터 수집"""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    params = {"range": range_period, "interval": "1d"}
+
+    res = requests.get(
+        url, params=params, headers=YAHOO_HEADERS, verify=SSL_VERIFY, timeout=15
+    )
+    res.raise_for_status()
+    data = res.json()
+
+    result = data.get("chart", {}).get("result")
+    if not result:
+        raise ValueError(f"'{symbol}' 종목을 찾을 수 없습니다.")
+
+    meta = result[0]["meta"]
+    timestamps = result[0]["timestamp"]
+    closes = result[0]["indicators"]["quote"][0]["close"]
+
+    history = []
+    for ts, close in zip(timestamps, closes):
+        if close is not None:
+            date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            history.append({"date": date, "close": round(close, 2)})
+
+    if not history:
+        raise ValueError(f"'{symbol}' 주가 데이터가 없습니다.")
+
+    return {
+        "symbol": symbol.upper(),
+        "name": meta.get("longName") or meta.get("shortName") or symbol.upper(),
+        "currency": meta.get("currency", "USD"),
+        "history": history,
+    }
+
+
+def fetch_summary(symbol: str) -> dict:
+    """Yahoo Finance 요약 API로 기본 정보 수집"""
+    url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+    params = {"modules": "summaryDetail,price"}
+
+    try:
+        res = requests.get(
+            url, params=params, headers=YAHOO_HEADERS, verify=SSL_VERIFY, timeout=15
+        )
+        res.raise_for_status()
+        result = res.json().get("quoteSummary", {}).get("result")
+        if not result:
+            return {}
+
+        detail = result[0].get("summaryDetail", {})
+        price = result[0].get("price", {})
+        return {
+            "market_cap": detail.get("marketCap", {}).get("raw"),
+            "pe_ratio": detail.get("trailingPE", {}).get("raw"),
+            "name": price.get("longName") or price.get("shortName"),
+        }
+    except Exception:
+        return {}
+
+
+def format_market_cap(value, prefix: str) -> str:
+    if not value:
+        return "-"
+    if value >= 1e12:
+        return f"{prefix}{(value / 1e12):.2f}T"
+    if value >= 1e9:
+        return f"{prefix}{(value / 1e9):.2f}B"
+    if value >= 1e6:
+        return f"{prefix}{(value / 1e6):.2f}M"
+    return f"{prefix}{value:,.0f}"
+
+
+def format_with_comma(value, decimals: int = 2) -> str:
+    if pd.isna(value):
+        return "-"
+    return f"{value:,.{decimals}f}"
+
+
+def format_grid_display(df: pd.DataFrame) -> pd.DataFrame:
+    """그리드 숫자 컬럼 천 단위 쉼표 포맷"""
+    display = df.copy()
+    for col in ("종가", "코스피", "RS지수", "MA10"):
+        if col in display.columns:
+            display[col] = display[col].apply(lambda x: format_with_comma(x))
+    return display
 
 
 def build_price_chart_data(symbol: str) -> pd.DataFrame:
@@ -43,29 +133,28 @@ def build_price_chart_data(symbol: str) -> pd.DataFrame:
 
 
 def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
-    """최근 N거래일 종가, RS지수, 10일 이동평균선 그리드 생성"""
+    """최근 N거래일 종가, 코스피, RS지수, 10일 이동평균선 그리드 생성"""
     stock = fetch_chart(symbol, range_period="1y")
-    benchmark = get_benchmark_symbol(symbol)
-    index = fetch_chart(benchmark, range_period="1y")
+    kospi = fetch_chart("^KS11", range_period="1y")
 
     stock_df = pd.DataFrame(stock["history"]).rename(columns={"close": "종가"})
-    index_df = pd.DataFrame(index["history"])[["date", "close"]].rename(
-        columns={"close": "index_close"}
+    kospi_df = pd.DataFrame(kospi["history"])[["date", "close"]].rename(
+        columns={"close": "코스피"}
     )
 
-    df = stock_df.merge(index_df, on="date", how="inner")
+    df = stock_df.merge(kospi_df, on="date", how="inner")
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").reset_index(drop=True)
 
     df["MA10"] = df["종가"].rolling(MA_WINDOW, min_periods=MA_WINDOW).mean().round(2)
 
     stock_ret = df["종가"] / df["종가"].shift(RS_WINDOW)
-    index_ret = df["index_close"] / df["index_close"].shift(RS_WINDOW)
-    df["RS지수"] = ((stock_ret / index_ret) * 100).round(2)
+    kospi_ret = df["코스피"] / df["코스피"].shift(RS_WINDOW)
+    df["RS지수"] = ((stock_ret / kospi_ret) * 100).round(2)
 
     df = df.tail(days).copy()
     df["날짜"] = df["date"].dt.strftime("%Y-%m-%d")
-    return df[["날짜", "종가", "RS지수", "MA10"]].reset_index(drop=True)
+    return df[["날짜", "종가", "코스피", "RS지수", "MA10"]].reset_index(drop=True)
 
 
 def analyze_stock(symbol: str) -> dict:
@@ -155,14 +244,14 @@ def render_analysis(data: dict) -> None:
     metric_col2.metric("시가총액", format_market_cap(data["market_cap"], prefix))
     metric_col3.metric("PER", f"{data['pe_ratio']:.2f}" if data["pe_ratio"] else "-")
 
-    st.markdown("### 100일 분석 그리드")
+    st.markdown("### 150일 분석 그리드")
     st.caption(
         f"현재일 기준 최근 {ANALYSIS_DAYS}거래일 · "
-        f"RS지수={RS_WINDOW}일 상대강도(벤치마크 대비 100) · MA10=10일 이동평균"
+        f"RS지수={RS_WINDOW}일 상대강도(코스피 대비 100) · MA10=10일 이동평균"
     )
     grid_df = data["grid"].sort_values("날짜", ascending=False).reset_index(drop=True)
     st.dataframe(
-        grid_df,
+        format_grid_display(grid_df),
         use_container_width=True,
         hide_index=True,
         height=min(600, 35 * len(grid_df) + 38),
