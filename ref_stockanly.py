@@ -38,7 +38,11 @@ GRID_COLUMNS = [
 ]
 COLOR_GRID_UP = "#dc2626"
 COLOR_GRID_DOWN = "#2563eb"
-COLOR_VOLUME = "#64748b"
+CHANGE_UP = "상승"
+CHANGE_DOWN = "하락"
+CHANGE_FLAT = "보합"
+CHANGE_COLORS = [COLOR_GRID_UP, COLOR_GRID_DOWN, "#94a3b8"]
+CHANGE_DOMAIN = [CHANGE_UP, CHANGE_DOWN, CHANGE_FLAT]
 COLOR_STOCK = "#1e3a8a"
 COLOR_KOSPI = "#991b1b"
 COLOR_RS = "#ea580c"
@@ -58,6 +62,7 @@ CHART_MONTHS = 3
 CLOSE_PANEL_HEIGHT = 240
 VOLUME_PANEL_HEIGHT = 133
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
+DATE_TOOLTIP = alt.Tooltip("date:T", title="날짜", format="%Y.%m.%d")
 
 
 def chart_x_encoding(show_labels: bool = True) -> alt.X:
@@ -66,6 +71,52 @@ def chart_x_encoding(show_labels: bool = True) -> alt.X:
     if not show_labels:
         axis = alt.Axis(labels=False, ticks=False, title=None)
     return alt.X("date:T", axis=axis)
+
+
+def chart_zoom() -> alt.selection_interval:
+    """X축 확대/이동 (드래그·휠·더블클릭)"""
+    return alt.selection_interval(bind="scales", encodings=["x"])
+
+
+def y_domain(values: pd.Series, padding_ratio: float = 0.05) -> list[float]:
+    """데이터 최소·최대값 기준 Y축 범위"""
+    series = values.dropna()
+    if series.empty:
+        return [0.0, 1.0]
+
+    min_val = float(series.min())
+    max_val = float(series.max())
+    if min_val == max_val:
+        margin = abs(min_val) * padding_ratio or 1.0
+        return [min_val - margin, max_val + margin]
+
+    padding = (max_val - min_val) * padding_ratio
+    return [min_val, max_val + padding]
+
+
+def y_encoding(
+    field: str,
+    title: str,
+    values: pd.Series,
+    *,
+    orient: str | None = None,
+) -> alt.Y:
+    """최소·최대값 기준 Y축"""
+    axis_kwargs: dict = {"format": ",.0f"}
+    if orient:
+        axis_kwargs["orient"] = orient
+
+    return alt.Y(
+        f"{field}:Q",
+        title=title,
+        scale=alt.Scale(domain=y_domain(values), nice=False),
+        axis=alt.Axis(**axis_kwargs),
+    )
+
+
+def finalize_chart(chart: alt.TopLevelSpec) -> alt.TopLevelSpec:
+    """차트 확대/이동 인터랙션 적용 (드래그·휠·더블클릭)"""
+    return chart.interactive(bind_y=False)
 
 
 def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
@@ -331,23 +382,85 @@ def slice_recent_months(df: pd.DataFrame, months: int = CHART_MONTHS) -> pd.Data
     return df[df["date"] >= cutoff].reset_index(drop=True)
 
 
+def compare_to_previous(values: pd.Series) -> pd.Series:
+    """전일 대비 증감 구분"""
+    diff = values.diff()
+    return diff.map(
+        lambda change: CHANGE_UP
+        if change > 0
+        else CHANGE_DOWN
+        if change < 0
+        else CHANGE_FLAT
+    )
+
+
+def build_price_line_segments(chart_df: pd.DataFrame) -> pd.DataFrame:
+    """종가 선형 차트용 구간별 증감 데이터"""
+    sorted_df = chart_df.sort_values("date").reset_index(drop=True)
+    segments = []
+
+    for idx in range(1, len(sorted_df)):
+        previous = sorted_df.iloc[idx - 1]
+        current = sorted_df.iloc[idx]
+        change = compare_to_previous(sorted_df["종가"]).iloc[idx]
+        segment_id = f"seg_{idx}"
+
+        for row in (previous, current):
+            segments.append(
+                {
+                    "date": row["date"],
+                    "종가": row["종가"],
+                    "segment": segment_id,
+                    "증감": change,
+                }
+            )
+
+    return pd.DataFrame(segments)
+
+
+def build_volume_change_df(chart_df: pd.DataFrame) -> pd.DataFrame:
+    """거래량 막대 차트용 증감 데이터"""
+    volume_df = chart_df.dropna(subset=["거래량"]).sort_values("date").copy()
+    volume_df["증감"] = compare_to_previous(volume_df["거래량"])
+    return volume_df.iloc[1:].reset_index(drop=True)
+
+
 def render_close_chart(chart_df: pd.DataFrame) -> None:
     """종목 종가(상단)·거래량(하단) 차트"""
-    price_df = chart_df.assign(구분="종가")
-    volume_df = chart_df.dropna(subset=["거래량"]).assign(구분="거래량")
+    price_segments = build_price_line_segments(chart_df)
+    volume_df = build_volume_change_df(chart_df)
+    price_points = chart_df.sort_values("date")[["date", "종가"]]
 
-    price_chart = (
-        alt.Chart(price_df)
+    change_scale = alt.Scale(domain=CHANGE_DOMAIN, range=CHANGE_COLORS)
+    zoom = chart_zoom()
+    price_y = y_encoding("종가", "종가", chart_df["종가"])
+    volume_y = y_encoding("거래량", "거래량", volume_df["거래량"])
+
+    price_line = (
+        alt.Chart(price_segments)
         .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(show_labels=False),
-            y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
-            color=alt.Color(
-                "구분:N",
-                scale=alt.Scale(domain=["종가"], range=[COLOR_STOCK]),
-                legend=LEGEND_BOTTOM,
-            ),
+            y=price_y,
+            color=alt.Color("증감:N", scale=change_scale, legend=LEGEND_BOTTOM),
+            detail="segment:N",
         )
+    )
+    price_hover = (
+        alt.Chart(price_points)
+        .mark_circle(opacity=0, size=80)
+        .encode(
+            x=chart_x_encoding(show_labels=False),
+            y=price_y,
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("종가:Q", title="종가", format=",.0f"),
+            ],
+        )
+    )
+    price_chart = (
+        alt.layer(price_line, price_hover)
+        .add_params(zoom)
         .properties(height=CLOSE_PANEL_HEIGHT)
     )
 
@@ -356,17 +469,21 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
         .mark_bar(size=3)
         .encode(
             x=chart_x_encoding(show_labels=True),
-            y=alt.Y("거래량:Q", title="거래량", axis=alt.Axis(format=",.0f")),
-            color=alt.Color(
-                "구분:N",
-                scale=alt.Scale(domain=["거래량"], range=[COLOR_VOLUME]),
-                legend=LEGEND_BOTTOM,
-            ),
+            y=volume_y,
+            color=alt.Color("증감:N", scale=change_scale, legend=LEGEND_BOTTOM),
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("거래량:Q", title="거래량", format=",.0f"),
+                alt.Tooltip("증감:N", title="전일대비"),
+            ],
         )
+        .add_params(zoom)
         .properties(height=VOLUME_PANEL_HEIGHT)
     )
 
-    chart = alt.vconcat(price_chart, volume_chart).resolve_scale(x="shared")
+    chart = finalize_chart(
+        alt.vconcat(price_chart, volume_chart).resolve_scale(x="shared")
+    )
     st.altair_chart(chart, use_container_width=True)
 
 
@@ -377,17 +494,21 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
         range=[COLOR_KOSPI, COLOR_RS],
     )
 
+    zoom = chart_zoom()
+    kospi_y = y_encoding("코스피", "코스피", chart_df["코스피"], orient="left")
+    rs_y = y_encoding("RS지수", "RS지수", chart_df["RS지수"], orient="right")
+
     kospi_line = (
         alt.Chart(chart_df.assign(구분="코스피"))
         .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
-            y=alt.Y(
-                "코스피:Q",
-                title="코스피",
-                axis=alt.Axis(format=",.0f", orient="left"),
-            ),
+            y=kospi_y,
             color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("코스피:Q", title="코스피", format=",.0f"),
+            ],
         )
     )
 
@@ -396,17 +517,18 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
         .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
-            y=alt.Y(
-                "RS지수:Q",
-                title="RS지수",
-                axis=alt.Axis(format=",.0f", orient="right"),
-            ),
+            y=rs_y,
             color=alt.Color("구분:N", scale=color_scale, legend=None),
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("RS지수:Q", title="RS지수", format=",.0f"),
+            ],
         )
     )
 
-    chart = (
+    chart = finalize_chart(
         alt.layer(kospi_line, rs_line)
+        .add_params(zoom)
         .resolve_scale(y="independent")
         .properties(height=CHART_HEIGHT)
     )
@@ -422,12 +544,14 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
         value_name="값",
     ).dropna(subset=["값"])
 
-    chart = (
+    value_y = y_encoding("값", "가격", long_df["값"])
+
+    chart = finalize_chart(
         alt.Chart(long_df)
         .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
-            y=alt.Y("값:Q", title="가격", axis=alt.Axis(format=",.0f")),
+            y=value_y,
             color=alt.Color(
                 "구분:N",
                 scale=alt.Scale(
@@ -436,7 +560,13 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
                 ),
                 legend=LEGEND_BOTTOM,
             ),
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("구분:N", title="구분"),
+                alt.Tooltip("값:Q", title="값", format=",.0f"),
+            ],
         )
+        .add_params(chart_zoom())
         .properties(height=CHART_HEIGHT)
     )
     st.altair_chart(chart, use_container_width=True)
