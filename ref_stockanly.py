@@ -45,9 +45,9 @@ CHANGE_COLORS = [COLOR_GRID_UP, COLOR_GRID_DOWN, "#94a3b8"]
 CHANGE_DOMAIN = [CHANGE_UP, CHANGE_DOWN, CHANGE_FLAT]
 COLOR_STOCK = "#1e3a8a"
 COLOR_KOSPI = "#991b1b"
-COLOR_RS = "#ea580c"
+COLOR_RS = "#2563eb"
 MA_COLORS = {
-    "종가": COLOR_STOCK,
+    "종가": COLOR_GRID_UP,
     "MA10": "#22c55e",
     "MA20": "#eab308",
     "MA30": "#a855f7",
@@ -536,37 +536,83 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
 
 
 def render_ma_chart(chart_df: pd.DataFrame) -> None:
-    """종가·이동평균선 차트"""
+    """종가·이동평균선 차트 (종가>MA150 구간 빨간 체크 표시)"""
+    zoom = chart_zoom()
+    all_values = pd.concat([chart_df[col] for col in MA_LABELS], ignore_index=True)
+    y_scale = alt.Scale(domain=y_domain(all_values), nice=False)
+    price_y = alt.Y(
+        "값:Q",
+        title="가격",
+        scale=y_scale,
+        axis=alt.Axis(format=",.0f"),
+    )
+    close_y = alt.Y(
+        "종가:Q",
+        title="가격",
+        scale=y_scale,
+        axis=alt.Axis(format=",.0f"),
+    )
+    color_scale = alt.Scale(
+        domain=MA_LABELS,
+        range=[MA_COLORS[label] for label in MA_LABELS],
+    )
+
     long_df = chart_df.melt(
         id_vars=["date"],
         value_vars=MA_LABELS,
         var_name="구분",
         value_name="값",
     ).dropna(subset=["값"])
+    ma_only = long_df[long_df["구분"] != "종가"]
+    close_only = long_df[long_df["구분"] == "종가"]
 
-    value_y = y_encoding("값", "가격", long_df["값"])
-
-    chart = finalize_chart(
-        alt.Chart(long_df)
+    ma_lines = (
+        alt.Chart(ma_only)
         .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
-            y=value_y,
-            color=alt.Color(
-                "구분:N",
-                scale=alt.Scale(
-                    domain=MA_LABELS,
-                    range=[MA_COLORS[label] for label in MA_LABELS],
-                ),
-                legend=LEGEND_BOTTOM,
-            ),
+            y=price_y,
+            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("구분:N", title="구분"),
                 alt.Tooltip("값:Q", title="값", format=",.0f"),
             ],
         )
-        .add_params(chart_zoom())
+    )
+
+    close_line = (
+        alt.Chart(close_only)
+        .mark_line(strokeWidth=3)
+        .encode(
+            x=chart_x_encoding(),
+            y=price_y,
+            color=alt.Color("구분:N", scale=color_scale, legend=None),
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("값:Q", title="종가", format=",.0f"),
+            ],
+        )
+    )
+
+    breakout_df = chart_df[
+        chart_df["MA150"].notna() & (chart_df["종가"] > chart_df["MA150"])
+    ].copy()
+    breakout_df["signal"] = "MA150 상승"
+
+    checks = (
+        alt.Chart(breakout_df)
+        .mark_text(text="✓", color=COLOR_GRID_UP, fontSize=13, fontWeight="bold", dy=-12)
+        .encode(
+            x=chart_x_encoding(),
+            y=close_y,
+            tooltip=[DATE_TOOLTIP, alt.Tooltip("signal:N", title="")],
+        )
+    )
+
+    chart = finalize_chart(
+        alt.layer(ma_lines, close_line, checks)
+        .add_params(zoom)
         .properties(height=CHART_HEIGHT)
     )
     st.altair_chart(chart, use_container_width=True)
