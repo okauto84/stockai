@@ -23,8 +23,19 @@ QUICK_SYMBOLS = [
 
 ANALYSIS_DAYS = 150
 GRID_VISIBLE_ROWS = 7
-MA_WINDOW = 10
 RS_WINDOW = 20
+GRID_COLUMNS = [
+    "날짜",
+    "종가",
+    "코스피",
+    "RS지수",
+    "MA10",
+    "MA20",
+    "MA30",
+    "MA50",
+    "MA100",
+    "MA150",
+]
 COLOR_STOCK = "#38bdf8"
 COLOR_KOSPI = "#fb923c"
 COLOR_RS = "#a855f7"
@@ -34,12 +45,21 @@ MA_COLORS = {
     "MA20": "#eab308",
     "MA30": "#f97316",
     "MA50": "#ef4444",
+    "MA100": "#06b6d4",
     "MA150": "#8b5cf6",
 }
-MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA150"]
-MA_WINDOWS = [10, 20, 30, 50, 150]
+MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
+MA_WINDOWS = [10, 20, 30, 50, 100, 150]
 CHART_HEIGHT = 280
-LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
+
+
+def chart_x_encoding() -> alt.X:
+    """날짜 포맷 X축 (예: 2026.08.31)"""
+    return alt.X(
+        "date:T",
+        title="날짜",
+        axis=alt.Axis(format="%Y.%m.%d", labelAngle=-45),
+    )
 
 
 def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
@@ -124,100 +144,37 @@ def format_with_comma(value, decimals: int = 0) -> str:
 def format_grid_display(df: pd.DataFrame) -> pd.DataFrame:
     """그리드 숫자 컬럼 천 단위 쉼표 포맷"""
     display = df.copy()
-    for col in ("종가", "코스피", "RS지수", "MA10"):
-        if col in display.columns:
-            display[col] = display[col].apply(lambda x: format_with_comma(x))
+    for col in GRID_COLUMNS:
+        if col == "날짜" or col not in display.columns:
+            continue
+        display[col] = display[col].apply(lambda x: format_with_comma(x))
     return display
 
 
-def build_close_3mo_chart_data(symbol: str) -> pd.DataFrame:
-    """3개월 종목 종가 차트 데이터"""
-    stock = fetch_chart(symbol, range_period="3mo")
-    df = pd.DataFrame(stock["history"])
-    df["date"] = pd.to_datetime(df["date"])
-    return df.rename(columns={"close": "종가"}).sort_values("date").reset_index(drop=True)
+def prepare_chart_df(grid_df: pd.DataFrame) -> pd.DataFrame:
+    """그리드 DataFrame을 차트용 시계열로 변환"""
+    df = grid_df.copy()
+    df["date"] = pd.to_datetime(df["날짜"])
+    return df.sort_values("date").reset_index(drop=True)
 
 
-def build_kospi_rs_3mo_chart_data(symbol: str) -> pd.DataFrame:
-    """3개월 코스피·RS지수 차트 데이터"""
-    stock = fetch_chart(symbol, range_period="3mo")
-    kospi = fetch_chart("^KS11", range_period="3mo")
-
-    stock_df = pd.DataFrame(stock["history"]).rename(columns={"close": "종가"})
-    kospi_df = pd.DataFrame(kospi["history"])[["date", "close"]].rename(
-        columns={"close": "코스피"}
-    )
-
-    df = stock_df.merge(kospi_df, on="date", how="inner")
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date").reset_index(drop=True)
-
-    stock_ret = df["종가"] / df["종가"].shift(RS_WINDOW)
-    kospi_ret = df["코스피"] / df["코스피"].shift(RS_WINDOW)
-    df["RS지수"] = ((stock_ret / kospi_ret) * 100).round(2)
-    return df
-
-
-def build_ma_5mo_chart_data(symbol: str) -> pd.DataFrame:
-    """5개월 종가·이동평균선 차트 데이터"""
-    stock = fetch_chart(symbol, range_period="1y")
-    df = pd.DataFrame(stock["history"])
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date").reset_index(drop=True)
-    df = df.rename(columns={"close": "종가"})
-
-    for window in MA_WINDOWS:
-        df[f"MA{window}"] = (
-            df["종가"].rolling(window, min_periods=window).mean().round(2)
-        )
-
-    cutoff = df["date"].max() - pd.DateOffset(months=5)
-    return df[df["date"] >= cutoff].reset_index(drop=True)
-
-
-def build_bottom_legend(labels: list[str], colors: list[str]) -> alt.Chart:
-    """하단 범례 전용 차트"""
-    legend_df = pd.DataFrame({"구분": labels})
-    return (
-        alt.Chart(legend_df)
-        .mark_point(filled=True, size=80)
+def render_close_chart(chart_df: pd.DataFrame) -> None:
+    """150일 종목 종가 차트"""
+    chart = (
+        alt.Chart(chart_df)
+        .mark_line(color=COLOR_STOCK, strokeWidth=2)
         .encode(
-            color=alt.Color(
-                "구분:N",
-                scale=alt.Scale(domain=labels, range=colors),
-                legend=LEGEND_BOTTOM,
-            )
-        )
-        .properties(height=40)
-    )
-
-
-def render_close_3mo_chart(chart_df: pd.DataFrame) -> None:
-    """3개월 종목 종가 차트"""
-    df = chart_df.copy()
-    df["구분"] = "종가"
-
-    main = (
-        alt.Chart(df)
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X("date:T", title="날짜"),
+            x=chart_x_encoding(),
             y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
-            color=alt.Color(
-                "구분:N",
-                scale=alt.Scale(domain=["종가"], range=[COLOR_STOCK]),
-                legend=None,
-            ),
         )
         .properties(height=CHART_HEIGHT)
     )
-    legend = build_bottom_legend(["종가"], [COLOR_STOCK])
-    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
 
-def render_kospi_rs_3mo_chart(chart_df: pd.DataFrame) -> None:
-    """3개월 코스피(좌측)·RS지수(우측) 이중 축 차트"""
-    base = alt.Chart(chart_df).encode(x=alt.X("date:T", title="날짜"))
+def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
+    """150일 코스피(좌측)·RS지수(우측) 이중 축 차트"""
+    base = alt.Chart(chart_df).encode(x=chart_x_encoding())
 
     kospi_line = base.mark_line(color=COLOR_KOSPI, strokeWidth=2).encode(
         y=alt.Y(
@@ -235,17 +192,16 @@ def render_kospi_rs_3mo_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
-    main = (
+    chart = (
         alt.layer(kospi_line, rs_line)
         .resolve_scale(y="independent")
         .properties(height=CHART_HEIGHT)
     )
-    legend = build_bottom_legend(["코스피", "RS지수"], [COLOR_KOSPI, COLOR_RS])
-    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
 
-def render_ma_5mo_chart(chart_df: pd.DataFrame) -> None:
-    """5개월 종가·이동평균선 차트"""
+def render_ma_chart(chart_df: pd.DataFrame) -> None:
+    """150일 종가·이동평균선 차트"""
     long_df = chart_df.melt(
         id_vars=["date"],
         value_vars=MA_LABELS,
@@ -253,11 +209,11 @@ def render_ma_5mo_chart(chart_df: pd.DataFrame) -> None:
         value_name="값",
     ).dropna(subset=["값"])
 
-    main = (
+    chart = (
         alt.Chart(long_df)
         .mark_line(strokeWidth=2)
         .encode(
-            x=alt.X("date:T", title="날짜"),
+            x=chart_x_encoding(),
             y=alt.Y("값:Q", title="가격", axis=alt.Axis(format=",.0f")),
             color=alt.Color(
                 "구분:N",
@@ -270,16 +226,13 @@ def render_ma_5mo_chart(chart_df: pd.DataFrame) -> None:
         )
         .properties(height=CHART_HEIGHT)
     )
-    legend = build_bottom_legend(
-        MA_LABELS, [MA_COLORS[label] for label in MA_LABELS]
-    )
-    st.altair_chart(alt.vconcat(main, legend), use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
 
 def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
-    """최근 N거래일 종가, 코스피, RS지수, 10일 이동평균선 그리드 생성"""
-    stock = fetch_chart(symbol, range_period="1y")
-    kospi = fetch_chart("^KS11", range_period="1y")
+    """최근 N거래일 분석 그리드 DataFrame 생성"""
+    stock = fetch_chart(symbol, range_period="2y")
+    kospi = fetch_chart("^KS11", range_period="2y")
 
     stock_df = pd.DataFrame(stock["history"]).rename(columns={"close": "종가"})
     kospi_df = pd.DataFrame(kospi["history"])[["date", "close"]].rename(
@@ -290,7 +243,10 @@ def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").reset_index(drop=True)
 
-    df["MA10"] = df["종가"].rolling(MA_WINDOW, min_periods=MA_WINDOW).mean().round(2)
+    for window in MA_WINDOWS:
+        df[f"MA{window}"] = (
+            df["종가"].rolling(window, min_periods=window).mean().round(2)
+        )
 
     stock_ret = df["종가"] / df["종가"].shift(RS_WINDOW)
     kospi_ret = df["코스피"] / df["코스피"].shift(RS_WINDOW)
@@ -298,7 +254,7 @@ def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
 
     df = df.tail(days).copy()
     df["날짜"] = df["date"].dt.strftime("%Y-%m-%d")
-    return df[["날짜", "종가", "코스피", "RS지수", "MA10"]].reset_index(drop=True)
+    return df[GRID_COLUMNS].reset_index(drop=True)
 
 
 def analyze_stock(symbol: str) -> dict:
@@ -306,9 +262,6 @@ def analyze_stock(symbol: str) -> dict:
     chart = fetch_chart(symbol)
     summary = fetch_summary(symbol)
     grid = build_analysis_grid(symbol)
-    close_3mo_chart = build_close_3mo_chart_data(symbol)
-    kospi_rs_3mo_chart = build_kospi_rs_3mo_chart_data(symbol)
-    ma_5mo_chart = build_ma_5mo_chart_data(symbol)
 
     history = chart["history"]
     current = history[-1]["close"]
@@ -375,9 +328,6 @@ def analyze_stock(symbol: str) -> dict:
         "sentiment": sentiment,
         "history": history,
         "grid": grid,
-        "close_3mo_chart": close_3mo_chart,
-        "kospi_rs_3mo_chart": kospi_rs_3mo_chart,
-        "ma_5mo_chart": ma_5mo_chart,
     }
 
 
@@ -395,7 +345,8 @@ def render_analysis(data: dict) -> None:
     st.markdown("### 150일 분석 그리드")
     st.caption(
         f"현재일 기준 최근 {ANALYSIS_DAYS}거래일 · "
-        f"RS지수={RS_WINDOW}일 상대강도(코스피 대비 100) · MA10=10일 이동평균"
+        f"RS지수={RS_WINDOW}일 상대강도(코스피 대비 100) · "
+        "MA10/20/30/50/100/150"
     )
     grid_df = data["grid"].sort_values("날짜", ascending=False).reset_index(drop=True)
     st.dataframe(
@@ -414,17 +365,25 @@ def render_analysis(data: dict) -> None:
         use_container_width=True,
     )
 
-    st.markdown("### 3개월 종가 추이")
-    st.caption("해당 종목 3개월 종가")
-    render_close_3mo_chart(data["close_3mo_chart"])
+    chart_df = prepare_chart_df(data["grid"])
 
-    st.markdown("### 3개월 코스피·RS지수")
-    st.caption(f"코스피(좌측) · RS지수(우측, {RS_WINDOW}일 상대강도)")
-    render_kospi_rs_3mo_chart(data["kospi_rs_3mo_chart"])
+    st.markdown(f"### {ANALYSIS_DAYS}일 종가 추이")
+    st.caption(f"분석 그리드 기반 · 현재일 기준 최근 {ANALYSIS_DAYS}거래일 종가")
+    render_close_chart(chart_df)
 
-    st.markdown("### 5개월 종가·이동평균선")
-    st.caption("종가 · MA10 · MA20 · MA30 · MA50 · MA150")
-    render_ma_5mo_chart(data["ma_5mo_chart"])
+    st.markdown(f"### {ANALYSIS_DAYS}일 코스피·RS지수")
+    st.caption(
+        f"분석 그리드 기반 · 최근 {ANALYSIS_DAYS}거래일 · "
+        f"코스피(좌측) · RS지수(우측, {RS_WINDOW}일 상대강도)"
+    )
+    render_kospi_rs_chart(chart_df)
+
+    st.markdown(f"### {ANALYSIS_DAYS}일 종가·이동평균선")
+    st.caption(
+        f"분석 그리드 기반 · 최근 {ANALYSIS_DAYS}거래일 · "
+        "종가 · MA10/20/30/50/100/150"
+    )
+    render_ma_chart(chart_df)
 
     st.markdown("### AI 분석 결과")
     sentiment = data["sentiment"]
