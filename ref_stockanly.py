@@ -38,6 +38,7 @@ GRID_COLUMNS = [
 ]
 COLOR_GRID_UP = "#dc2626"
 COLOR_GRID_DOWN = "#2563eb"
+COLOR_VOLUME = "#64748b"
 COLOR_STOCK = "#1e3a8a"
 COLOR_KOSPI = "#991b1b"
 COLOR_RS = "#ea580c"
@@ -54,16 +55,17 @@ MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 MA_WINDOWS = [10, 20, 30, 50, 100, 150]
 CHART_HEIGHT = 373
 CHART_MONTHS = 3
+CLOSE_PANEL_HEIGHT = 240
+VOLUME_PANEL_HEIGHT = 133
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 
 
-def chart_x_encoding() -> alt.X:
+def chart_x_encoding(show_labels: bool = True) -> alt.X:
     """날짜 포맷 X축 (예: 08.31, 연도 미표시)"""
-    return alt.X(
-        "date:T",
-        title=None,
-        axis=alt.Axis(format="%m.%d", labelAngle=-45),
-    )
+    axis = alt.Axis(format="%m.%d", labelAngle=-45, title=None)
+    if not show_labels:
+        axis = alt.Axis(labels=False, ticks=False, title=None)
+    return alt.X("date:T", axis=axis)
 
 
 def fetch_chart(symbol: str, range_period: str = "3mo") -> dict:
@@ -330,13 +332,15 @@ def slice_recent_months(df: pd.DataFrame, months: int = CHART_MONTHS) -> pd.Data
 
 
 def render_close_chart(chart_df: pd.DataFrame) -> None:
-    """종목 종가 차트"""
-    df = chart_df.assign(구분="종가")
-    chart = (
-        alt.Chart(df)
+    """종목 종가(상단)·거래량(하단) 차트"""
+    price_df = chart_df.assign(구분="종가")
+    volume_df = chart_df.dropna(subset=["거래량"]).assign(구분="거래량")
+
+    price_chart = (
+        alt.Chart(price_df)
         .mark_line(strokeWidth=1)
         .encode(
-            x=chart_x_encoding(),
+            x=chart_x_encoding(show_labels=False),
             y=alt.Y("종가:Q", title="종가", axis=alt.Axis(format=",.0f")),
             color=alt.Color(
                 "구분:N",
@@ -344,8 +348,25 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
                 legend=LEGEND_BOTTOM,
             ),
         )
-        .properties(height=CHART_HEIGHT)
+        .properties(height=CLOSE_PANEL_HEIGHT)
     )
+
+    volume_chart = (
+        alt.Chart(volume_df)
+        .mark_bar(size=3)
+        .encode(
+            x=chart_x_encoding(show_labels=True),
+            y=alt.Y("거래량:Q", title="거래량", axis=alt.Axis(format=",.0f")),
+            color=alt.Color(
+                "구분:N",
+                scale=alt.Scale(domain=["거래량"], range=[COLOR_VOLUME]),
+                legend=LEGEND_BOTTOM,
+            ),
+        )
+        .properties(height=VOLUME_PANEL_HEIGHT)
+    )
+
+    chart = alt.vconcat(price_chart, volume_chart).resolve_scale(x="shared")
     st.altair_chart(chart, use_container_width=True)
 
 
@@ -515,7 +536,10 @@ def render_stock_detail(data: dict) -> None:
     chart_df = slice_recent_months(prepare_chart_df(data["grid"]), CHART_MONTHS)
 
     st.markdown(f"#### {CHART_MONTHS}개월 종가 추이")
-    st.caption(f"분석 그리드 기반 · 현재일 기준 최근 {CHART_MONTHS}개월 종가")
+    st.caption(
+        f"분석 그리드 기반 · 최근 {CHART_MONTHS}개월 · "
+        "상단 종가 · 하단 거래량"
+    )
     render_close_chart(chart_df)
 
     st.markdown(f"#### {CHART_MONTHS}개월 코스피·RS지수")
