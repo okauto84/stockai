@@ -1,5 +1,7 @@
+import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
@@ -13,6 +15,9 @@ YAHOO_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 }
 SSL_VERIFY = os.getenv("STOCKAI_SSL_VERIFY", "false").lower() == "true"
+KOSPI_LIST_FILE = (
+    Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
+)
 
 QUICK_SYMBOLS = [
     ("AAPL", "AAPL"),
@@ -23,6 +28,7 @@ QUICK_SYMBOLS = [
 
 ANALYSIS_DAYS = 150
 GRID_VISIBLE_ROWS = 7
+STOCK_LIST_VISIBLE_ROWS = 10
 RS_WINDOW = 20
 GRID_COLUMNS = [
     "날짜",
@@ -150,6 +156,95 @@ def format_grid_display(df: pd.DataFrame) -> pd.DataFrame:
             continue
         display[col] = display[col].apply(lambda x: format_with_comma(x))
     return display
+
+
+@st.cache_data
+def load_stock_list() -> pd.DataFrame:
+    """kospilist.json 종목 목록 DataFrame 로드"""
+    with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
+        payload = json.load(file)
+
+    records = []
+    for market, items in payload.get("markets", {}).items():
+        for item in items:
+            records.append(
+                {
+                    "시장": market,
+                    "종목코드": item["code"],
+                    "종목명": item["name"],
+                    "야후심볼": item["yahoosymbol"],
+                    "ETF": item["ETF"],
+                }
+            )
+
+    return pd.DataFrame(records)
+
+
+def apply_stock_list_selection(
+    stock_df: pd.DataFrame, selection_state
+) -> None:
+    """종목 목록 그리드 선택값을 종목 코드 입력란에 반영"""
+    if not selection_state or not selection_state.selection.rows:
+        return
+
+    selected_row = stock_df.iloc[selection_state.selection.rows[0]]
+    st.session_state["symbol"] = selected_row["야후심볼"]
+
+
+def render_stock_list_grid() -> None:
+    """코스피·코스닥 종목 목록 그리드"""
+    if not KOSPI_LIST_FILE.exists():
+        st.warning(f"종목 목록 파일을 찾을 수 없습니다: {KOSPI_LIST_FILE}")
+        return
+
+    try:
+        stock_df = load_stock_list()
+    except json.JSONDecodeError:
+        st.warning("종목 목록 JSON 파일 형식이 올바르지 않습니다.")
+        return
+
+    filter_col1, filter_col2 = st.columns([1, 3])
+    with filter_col1:
+        market_filter = st.selectbox(
+            "시장",
+            options=["전체", "KOSPI", "KOSDAQ"],
+            key="stock_list_market_filter",
+        )
+    with filter_col2:
+        keyword = st.text_input(
+            "종목 검색",
+            placeholder="종목코드 또는 종목명 검색",
+            key="stock_list_keyword",
+        ).strip()
+
+    filtered_df = stock_df.copy()
+    if market_filter != "전체":
+        filtered_df = filtered_df[filtered_df["시장"] == market_filter]
+    if keyword:
+        keyword_upper = keyword.upper()
+        filtered_df = filtered_df[
+            filtered_df["종목코드"].str.contains(keyword_upper, na=False)
+            | filtered_df["종목명"].str.contains(keyword, na=False)
+            | filtered_df["야후심볼"].str.contains(keyword_upper, na=False)
+        ]
+
+    display_df = filtered_df.reset_index(drop=True)
+
+    st.markdown("### 종목 목록")
+    st.caption(
+        f"코스피·코스닥 상장 종목 {len(stock_df):,}개 · "
+        "행을 선택하면 종목 코드 입력란에 반영됩니다"
+    )
+    selection = st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        height=35 * STOCK_LIST_VISIBLE_ROWS + 38,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="stock_list_selection",
+    )
+    apply_stock_list_selection(display_df, selection)
 
 
 def prepare_chart_df(grid_df: pd.DataFrame) -> pd.DataFrame:
@@ -412,13 +507,15 @@ def render_page() -> None:
     st.title("종목분석")
     st.caption("AI 기반 주식 분석")
 
+    render_stock_list_grid()
+
     search_col, btn_col = st.columns([5, 1])
     with search_col:
         symbol_input = st.text_input(
             "종목 코드",
-            value=st.session_state.get("symbol", ""),
             placeholder="종목 코드 입력 (예: AAPL, TSLA, 005930.KS)",
             label_visibility="collapsed",
+            key="symbol",
         )
     with btn_col:
         analyze_clicked = st.button("AI 분석", type="primary", use_container_width=True)
