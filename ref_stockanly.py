@@ -23,6 +23,25 @@ def get_benchmark_symbol(symbol: str) -> str:
     return "^GSPC"
 
 
+def build_price_chart_data(symbol: str) -> pd.DataFrame:
+    """3개월 종목 종가와 코스피 지수 비교 차트 데이터"""
+    stock = fetch_chart(symbol, range_period="3mo")
+    kospi = fetch_chart("^KS11", range_period="3mo")
+
+    stock_df = pd.DataFrame(stock["history"]).set_index("date")
+    kospi_df = pd.DataFrame(kospi["history"]).set_index("date")["close"].rename("코스피")
+
+    chart_df = stock_df.join(kospi_df, how="inner").rename(columns={"close": "종가"})
+    if chart_df.empty:
+        raise ValueError("종목과 코스피 지수 데이터를 병합할 수 없습니다.")
+
+    base_stock = chart_df["종가"].iloc[0]
+    base_kospi = chart_df["코스피"].iloc[0]
+    chart_df["종가"] = (chart_df["종가"] / base_stock * 100).round(2)
+    chart_df["코스피"] = (chart_df["코스피"] / base_kospi * 100).round(2)
+    return chart_df
+
+
 def build_analysis_grid(symbol: str, days: int = ANALYSIS_DAYS) -> pd.DataFrame:
     """최근 N거래일 종가, RS지수, 10일 이동평균선 그리드 생성"""
     stock = fetch_chart(symbol, range_period="1y")
@@ -54,6 +73,7 @@ def analyze_stock(symbol: str) -> dict:
     chart = fetch_chart(symbol)
     summary = fetch_summary(symbol)
     grid = build_analysis_grid(symbol)
+    price_chart = build_price_chart_data(symbol)
 
     history = chart["history"]
     current = history[-1]["close"]
@@ -120,6 +140,7 @@ def analyze_stock(symbol: str) -> dict:
         "sentiment": sentiment,
         "history": history,
         "grid": grid,
+        "price_chart": price_chart,
     }
 
 
@@ -156,25 +177,21 @@ def render_analysis(data: dict) -> None:
         use_container_width=True,
     )
 
-    col1, col2 = st.columns(2)
+    st.markdown("### 3개월 가격 추이")
+    st.caption("종목 종가 vs 코스피 지수 (3개월 시작일 = 100 기준 정규화)")
+    st.line_chart(data["price_chart"], use_container_width=True)
 
-    with col1:
-        st.markdown("### AI 분석 결과")
-        sentiment = data["sentiment"]
-        if sentiment == "positive":
-            st.success(f"점수 {data['score']} · {data['recommendation']}")
-        elif sentiment == "neutral":
-            st.warning(f"점수 {data['score']} · {data['recommendation']}")
-        else:
-            st.error(f"점수 {data['score']} · {data['recommendation']}")
+    st.markdown("### AI 분석 결과")
+    sentiment = data["sentiment"]
+    if sentiment == "positive":
+        st.success(f"점수 {data['score']} · {data['recommendation']}")
+    elif sentiment == "neutral":
+        st.warning(f"점수 {data['score']} · {data['recommendation']}")
+    else:
+        st.error(f"점수 {data['score']} · {data['recommendation']}")
 
-        for signal in data["signals"]:
-            st.markdown(f"- {signal}")
-
-    with col2:
-        st.markdown("### 3개월 가격 추이")
-        chart_df = pd.DataFrame(data["history"]).set_index("date")
-        st.line_chart(chart_df["close"], use_container_width=True)
+    for signal in data["signals"]:
+        st.markdown(f"- {signal}")
 
 
 def render_page() -> None:
