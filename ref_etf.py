@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 KOSPI_LIST_FILE = (
     Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
 )
 MAX_GRID_ROWS = 12
-
-# st.dataframe은 중복 컬럼명을 허용하지 않으므로, 표시는 동일하게 보이도록 ZWSP 사용
-COL_SECTOR_L = "섹터"
-COL_COUNT_L = "수"
-COL_SECTOR_R = "섹터\u200b"
-COL_COUNT_R = "수\u200b"
 
 
 @st.cache_data
@@ -52,10 +48,10 @@ def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[str]]]:
     return pd.DataFrame(count_rows), sector_names
 
 
-def build_sector_count_grid(
+def build_sector_grid_rows(
     sector_df: pd.DataFrame, max_rows: int = MAX_GRID_ROWS
-) -> pd.DataFrame:
-    """섹터·수 목록을 최대 max_rows행의 4열(섹터|수|섹터|수) 그리드로 변환"""
+) -> list[dict]:
+    """섹터·수 목록을 최대 max_rows행의 좌·우 쌍으로 변환"""
     items = [
         (str(sector), int(count))
         for sector, count in sector_df.itertuples(index=False, name=None)
@@ -64,50 +60,245 @@ def build_sector_count_grid(
     right = items[1::2]
     row_count = min(max_rows, max(len(left), len(right), 0))
 
-    left_sectors: list[str] = []
-    left_counts: list[int | None] = []
-    right_sectors: list[str] = []
-    right_counts: list[int | None] = []
-
+    rows: list[dict] = []
     for idx in range(row_count):
-        if idx < len(left):
-            sector, count = left[idx]
-            left_sectors.append(sector)
-            left_counts.append(count)
-        else:
-            left_sectors.append("")
-            left_counts.append(None)
+        left_item = left[idx] if idx < len(left) else ("", None)
+        right_item = right[idx] if idx < len(right) else ("", None)
+        rows.append(
+            {
+                "left_sector": left_item[0],
+                "left_count": left_item[1],
+                "right_sector": right_item[0],
+                "right_count": right_item[1],
+            }
+        )
+    return rows
 
-        if idx < len(right):
-            sector, count = right[idx]
-            right_sectors.append(sector)
-            right_counts.append(count)
-        else:
-            right_sectors.append("")
-            right_counts.append(None)
 
-    return pd.DataFrame(
-        {
-            COL_SECTOR_L: left_sectors,
-            COL_COUNT_L: pd.Series(left_counts, dtype="Int64"),
-            COL_SECTOR_R: right_sectors,
-            COL_COUNT_R: pd.Series(right_counts, dtype="Int64"),
-        }
+def _name_chips_html(names: list[str]) -> str:
+    """종목명을 가로 네모박스(칩) HTML로 변환"""
+    if not names:
+        return '<span class="empty-msg">표시할 ETF가 없습니다.</span>'
+    return "".join(
+        f'<span class="name-chip">{html.escape(name)}</span>' for name in names
     )
 
 
-def render_sector_name_list(sector: str, names: list[str]) -> None:
-    """섹터별 종목명만 나열하는 접이식 목록"""
-    label = f"{sector} · {len(names):,}개"
-    with st.expander(label, expanded=True):
-        if not names:
-            st.info("해당 섹터에 표시할 ETF가 없습니다.")
-            return
-        st.markdown("\n".join(f"- {name}" for name in names))
+def build_sector_grid_html(
+    grid_rows: list[dict], sector_names: dict[str, list[str]]
+) -> str:
+    """클릭 시 행이 펼쳐지는 HTML 섹터 그리드 생성"""
+    body_rows: list[str] = []
+
+    for idx, row in enumerate(grid_rows):
+        left_sector = row["left_sector"]
+        left_count = row["left_count"]
+        right_sector = row["right_sector"]
+        right_count = row["right_count"]
+
+        left_cell = (
+            f'<td class="sector clickable" data-detail="detail-{idx}-L" '
+            f'title="클릭하여 종목 목록 펼치기">{html.escape(left_sector)}</td>'
+            if left_sector
+            else '<td class="sector"></td>'
+        )
+        left_count_cell = (
+            f'<td class="count">{left_count}</td>'
+            if left_count is not None
+            else '<td class="count"></td>'
+        )
+        right_cell = (
+            f'<td class="sector clickable" data-detail="detail-{idx}-R" '
+            f'title="클릭하여 종목 목록 펼치기">{html.escape(right_sector)}</td>'
+            if right_sector
+            else '<td class="sector"></td>'
+        )
+        right_count_cell = (
+            f'<td class="count">{right_count}</td>'
+            if right_count is not None
+            else '<td class="count"></td>'
+        )
+
+        left_names = sector_names.get(left_sector, []) if left_sector else []
+        right_names = sector_names.get(right_sector, []) if right_sector else []
+
+        body_rows.append(
+            f"""
+            <tr class="main-row" id="row-{idx}">
+              {left_cell}
+              {left_count_cell}
+              {right_cell}
+              {right_count_cell}
+            </tr>
+            <tr class="detail-row" id="detail-{idx}-L">
+              <td colspan="4">
+                <div class="detail-wrap">
+                  <div class="detail-title">{html.escape(left_sector)} 종목</div>
+                  <div class="chip-row">{_name_chips_html(left_names)}</div>
+                </div>
+              </td>
+            </tr>
+            <tr class="detail-row" id="detail-{idx}-R">
+              <td colspan="4">
+                <div class="detail-wrap">
+                  <div class="detail-title">{html.escape(right_sector)} 종목</div>
+                  <div class="chip-row">{_name_chips_html(right_names)}</div>
+                </div>
+              </td>
+            </tr>
+            """
+        )
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {{
+    --border: #d0d7de;
+    --header-bg: #f6f8fa;
+    --hover: #eef6ff;
+    --active: #dbeafe;
+    --chip-bg: #f8fafc;
+    --chip-border: #cbd5e1;
+    --text: #0f172a;
+    --muted: #64748b;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    padding: 0;
+    font-family: "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: transparent;
+  }}
+  table.sector-grid {{
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+  }}
+  table.sector-grid th,
+  table.sector-grid td {{
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    vertical-align: middle;
+  }}
+  table.sector-grid thead th {{
+    background: var(--header-bg);
+    font-weight: 700;
+    text-align: left;
+  }}
+  td.sector {{
+    width: 34%;
+  }}
+  td.count {{
+    width: 16%;
+    text-align: left;
+  }}
+  td.clickable {{
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+  }}
+  td.clickable:hover {{
+    background: var(--hover);
+  }}
+  td.clickable.active {{
+    background: var(--active);
+    font-weight: 600;
+  }}
+  tr.detail-row {{
+    display: none;
+  }}
+  tr.detail-row.open {{
+    display: table-row;
+  }}
+  .detail-wrap {{
+    padding: 6px 2px 4px;
+  }}
+  .detail-title {{
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }}
+  .chip-row {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }}
+  .name-chip {{
+    display: inline-block;
+    padding: 5px 10px;
+    border: 1px solid var(--chip-border);
+    border-radius: 6px;
+    background: var(--chip-bg);
+    white-space: nowrap;
+    line-height: 1.3;
+  }}
+  .empty-msg {{
+    color: var(--muted);
+  }}
+</style>
+</head>
+<body>
+  <table class="sector-grid">
+    <thead>
+      <tr>
+        <th>섹터</th>
+        <th>수</th>
+        <th>섹터</th>
+        <th>수</th>
+      </tr>
+    </thead>
+    <tbody>
+      {"".join(body_rows)}
+    </tbody>
+  </table>
+  <script>
+    (function () {{
+      function closeAll(exceptId) {{
+        document.querySelectorAll("tr.detail-row.open").forEach(function (row) {{
+          if (row.id !== exceptId) row.classList.remove("open");
+        }});
+        document.querySelectorAll("td.clickable.active").forEach(function (cell) {{
+          if (cell.getAttribute("data-detail") !== exceptId) {{
+            cell.classList.remove("active");
+          }}
+        }});
+      }}
+
+      document.querySelectorAll("td.clickable").forEach(function (cell) {{
+        cell.addEventListener("click", function () {{
+          var detailId = cell.getAttribute("data-detail");
+          var detail = document.getElementById(detailId);
+          if (!detail) return;
+
+          var willOpen = !detail.classList.contains("open");
+          closeAll(willOpen ? detailId : null);
+          detail.classList.toggle("open", willOpen);
+          cell.classList.toggle("active", willOpen);
+
+          // iframe 높이를 내용에 맞게 요청 (Streamlit parent가 무시할 수 있음)
+          var height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+          window.parent.postMessage({{ isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: height }}, "*");
+        }});
+      }});
+    }})();
+  </script>
+</body>
+</html>
+"""
 
 
 def render_sector_count_grid() -> None:
-    """섹터별 ETF 종목 수 그리드 및 선택 행의 종목명 목록 표시"""
+    """섹터별 ETF 종목 수 HTML 그리드 표시"""
     if not KOSPI_LIST_FILE.exists():
         st.warning(f"종목 목록 파일을 찾을 수 없습니다: {KOSPI_LIST_FILE}")
         return
@@ -125,47 +316,22 @@ def render_sector_count_grid() -> None:
         st.info("표시할 ETF 섹터 데이터가 없습니다.")
         return
 
-    try:
-        grid_df = build_sector_count_grid(sector_df, MAX_GRID_ROWS)
-    except Exception as exc:
-        st.error(f"섹터 그리드 생성 중 오류: {exc}")
-        return
-
+    grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
     total_etf = int(sector_df["수"].sum())
     st.caption(
         f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · "
-        f"ETF {total_etf:,}개 · 그리드 {len(grid_df)}행 · "
-        "행을 선택하면 해당 섹터 ETF 종목명을 펼칩니다"
+        f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행 · "
+        "섹터를 클릭하면 종목명이 가로로 펼쳐집니다"
     )
 
-    selection = st.dataframe(
-        grid_df,
-        use_container_width=True,
-        hide_index=True,
-        height=35 * (len(grid_df) + 1) + 2,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="etf_sector_grid_selection",
-        column_config={
-            COL_SECTOR_L: st.column_config.TextColumn("섹터"),
-            COL_COUNT_L: st.column_config.NumberColumn("수", format="%d"),
-            COL_SECTOR_R: st.column_config.TextColumn("섹터"),
-            COL_COUNT_R: st.column_config.NumberColumn("수", format="%d"),
-        },
+    # '기타'처럼 종목이 많은 섹터 펼침을 고려해 여유 높이 확보
+    max_names = max((len(names) for names in sector_names.values()), default=0)
+    estimated_height = 48 + len(grid_rows) * 38 + 120 + min(max_names, 40) * 4
+    components.html(
+        build_sector_grid_html(grid_rows, sector_names),
+        height=max(estimated_height, 720),
+        scrolling=True,
     )
-
-    selected_rows = selection.selection.rows if selection and selection.selection else []
-    if not selected_rows:
-        return
-
-    row = grid_df.iloc[selected_rows[0]]
-    left_sector = str(row[COL_SECTOR_L]).strip()
-    right_sector = str(row[COL_SECTOR_R]).strip()
-
-    if left_sector:
-        render_sector_name_list(left_sector, sector_names.get(left_sector, []))
-    if right_sector:
-        render_sector_name_list(right_sector, sector_names.get(right_sector, []))
 
 
 def render_page() -> None:
