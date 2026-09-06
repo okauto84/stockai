@@ -5,10 +5,10 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
-from urllib.parse import urlencode
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 KOSPI_LIST_FILE = (
     Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
@@ -86,29 +86,24 @@ def build_sector_grid_rows(
     return rows
 
 
-def _stock_link(etf: dict[str, str], sector: str) -> str:
-    """개별 종목 분석 탭 이동용 링크 생성"""
-    query = urlencode(
-        {
-            "goto": "stock",
-            "symbol": etf["yahoosymbol"],
-            "sector": sector,
-            "keyword": etf.get("code") or etf["name"],
-        }
-    )
+def _stock_chip(etf: dict[str, str], sector: str) -> str:
+    """개별 종목 분석 탭 이동용 칩(동일 창) HTML 생성"""
     name = html.escape(etf["name"])
-    symbol = html.escape(etf["yahoosymbol"])
+    symbol = html.escape(etf["yahoosymbol"], quote=True)
+    sector_q = html.escape(sector, quote=True)
+    keyword = html.escape(etf.get("code") or etf["name"], quote=True)
     return (
-        f'<a class="name-chip" href="?{query}" '
-        f'title="{symbol} 분석 보기">{name}</a>'
+        f'<span class="name-chip" role="button" tabindex="0" '
+        f'data-symbol="{symbol}" data-sector="{sector_q}" '
+        f'data-keyword="{keyword}" title="{symbol} 분석 보기">{name}</span>'
     )
 
 
 def _name_chips_html(etfs: list[dict[str, str]], sector: str) -> str:
-    """종목명을 네모박스(칩) 링크 HTML로 변환"""
+    """종목명을 네모박스(칩) HTML로 변환"""
     if not etfs:
         return '<span class="empty-msg">표시할 ETF가 없습니다.</span>'
-    return "".join(_stock_link(etf, sector) for etf in etfs)
+    return "".join(_stock_chip(etf, sector) for etf in etfs)
 
 
 def _sector_cell_html(
@@ -236,7 +231,7 @@ def build_sector_grid_html(
     gap: 8px;
     align-items: center;
   }}
-  a.name-chip {{
+  span.name-chip {{
     display: inline-block;
     padding: 5px 10px;
     border: 1px solid #cbd5e1;
@@ -247,8 +242,10 @@ def build_sector_grid_html(
     white-space: nowrap;
     line-height: 1.3;
     font-size: 10px;
+    cursor: pointer;
+    user-select: none;
   }}
-  a.name-chip:hover {{
+  span.name-chip:hover {{
     background: #dbeafe;
     border-color: #93c5fd;
   }}
@@ -273,6 +270,101 @@ def build_sector_grid_html(
   </table>
 </div>
 """
+
+
+def install_same_window_chip_navigation() -> None:
+    """종목 칩 클릭을 동일 창 내 쿼리 이동으로 처리 (새 창 방지)"""
+    components.html(
+        """
+        <script>
+        (function () {
+          const parentWin = window.parent;
+          const parentDoc = parentWin.document;
+
+          function bindChips(root) {
+            root.querySelectorAll('span.name-chip[data-symbol]').forEach(function (chip) {
+              if (chip.dataset.navBound === '1') return;
+              chip.dataset.navBound = '1';
+              chip.style.cursor = 'pointer';
+
+              function go() {
+                const symbol = chip.getAttribute('data-symbol') || '';
+                const sector = chip.getAttribute('data-sector') || '';
+                const keyword = chip.getAttribute('data-keyword') || '';
+                if (!symbol) return;
+                const url = new URL(parentWin.location.href);
+                url.searchParams.set('goto', 'stock');
+                url.searchParams.set('symbol', symbol);
+                url.searchParams.set('sector', sector);
+                url.searchParams.set('keyword', keyword);
+                parentWin.location.assign(url.toString());
+              }
+
+              chip.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                go();
+              }, true);
+
+              chip.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  go();
+                }
+              });
+            });
+          }
+
+          // 부모 문서에서 실행되는 핸들러를 주입해 동일 창 이동을 보장
+          const script = parentDoc.createElement('script');
+          script.textContent = `
+            (function () {
+              if (window.__etfChipNavInstalled) return;
+              window.__etfChipNavInstalled = true;
+
+              function bind(root) {
+                root.querySelectorAll('span.name-chip[data-symbol]').forEach(function (chip) {
+                  if (chip.dataset.navBound === '1') return;
+                  chip.dataset.navBound = '1';
+                  chip.style.cursor = 'pointer';
+                  function go() {
+                    const symbol = chip.getAttribute('data-symbol') || '';
+                    const sector = chip.getAttribute('data-sector') || '';
+                    const keyword = chip.getAttribute('data-keyword') || '';
+                    if (!symbol) return;
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('goto', 'stock');
+                    url.searchParams.set('symbol', symbol);
+                    url.searchParams.set('sector', sector);
+                    url.searchParams.set('keyword', keyword);
+                    window.location.assign(url.toString());
+                  }
+                  chip.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    go();
+                  }, true);
+                  chip.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      go();
+                    }
+                  });
+                });
+              }
+
+              bind(document);
+              new MutationObserver(function () { bind(document); })
+                .observe(document.body, { childList: true, subtree: true });
+            })();
+          `;
+          parentDoc.head.appendChild(script);
+          bindChips(parentDoc);
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def render_sector_count_grid() -> None:
@@ -305,6 +397,7 @@ def render_sector_count_grid() -> None:
         build_sector_grid_html(grid_rows, sector_etfs),
         unsafe_allow_html=True,
     )
+    install_same_window_chip_navigation()
 
 
 def render_page() -> None:
