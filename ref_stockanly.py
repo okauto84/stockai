@@ -385,7 +385,30 @@ def render_stock_list_grid() -> None:
     if st.session_state["stock_list_sector_ui"] not in sector_options:
         st.session_state["stock_list_sector_ui"] = "전체"
 
-    filter_col1, filter_col2, filter_col3, btn_col = st.columns([1, 1, 2.5, 1])
+    st.markdown(
+        """
+        <style>
+        /* 시장·섹터 콤보박스 가로 폭 축소 */
+        div[data-testid="stSelectbox"] {
+            max-width: 9.5rem;
+        }
+        /* 콤보박스 직접 텍스트 입력 차단 (선택만 가능) */
+        div[data-testid="stSelectbox"] input {
+            pointer-events: none !important;
+            caret-color: transparent !important;
+            user-select: none !important;
+        }
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+            cursor: pointer !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    filter_col1, filter_col2, filter_col3, btn_col, _spacer = st.columns(
+        [0.7, 0.9, 2.6, 0.7, 2.1]
+    )
     with filter_col1:
         market_filter = st.selectbox(
             "시장",
