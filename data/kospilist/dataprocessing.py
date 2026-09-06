@@ -126,18 +126,185 @@ def merge_with_etf_listing(
     return merged.sort_values(["Market", "Code"]).reset_index(drop=True)
 
 
+def get_accurate_sector(code: str, name: str) -> str:
+    """ETF 종목코드·종목명 기반 섹터 분류"""
+    # 1. [전문가 매핑] PDF(자산구성내역) 분석 기반 하드코딩
+    expert_mapping = {
+        "0040S0": "기계",  # HANARO 글로벌피지컬AI액티브 (로봇/자동화 중심)
+        "433250": "IT/플랫폼",  # UNICORN R&D 액티브 (SK하이닉스, 네이버 등 대형 IT)
+        "433220": "IT/플랫폼",  # 에셋플러스 글로벌대장장이액티브
+        "0222F0": "데이터센터",  # 마이티 AI데이터센터밸류체인
+        "0150K0": "전력",  # KoAct 수소전력ESS인프라액티브 (HD현대일렉트릭 등 전력기기)
+        "491820": "전선",  # HANARO 전력설비투자 (LS, 일진전기, 대한전선 비중 높음)
+        "487240": "전력",  # KODEX AI전력핵심설비 (변압기, 송배전 중심)
+        "0173Y0": "광통신",  # KODEX 미국AI광통신네트워크
+        "0215T0": "광통신",  # HANARO 미국AI광통신TOP10
+        "0219B0": "광통신",  # KoAct 광통신&위성네트워크액티브
+        "0051A0": "반도체",  # KoAct 브로드컴밸류체인액티브
+        "0093D0": "IT/플랫폼",  # KoAct 팔란티어밸류체인액티브
+        "0142D0": "데이터센터",  # TIGER 미국AI데이터센터TOP4Plus
+        "0101N0": "전력",  # RISE AI전력인프라
+        "0117V0": "전력",  # TIGER 코리아AI전력기기TOP3플러스
+        "0079X0": "2차전지",  # ACE BYD밸류체인액티브
+        "044091": "방산",  # WON 미국우주항공방산
+        "463250": "방산",  # TIGER K방산&우주
+        "0204D0": "기계",  # KODEX 현대차로보틱스밸류체인TOP3플러스
+        "0115E0": "IT/플랫폼",  # KODEX 코리아소버린AI
+        "474920": "IT/플랫폼",  # 에셋플러스 차이나일등기업포커스10액티브
+    }
+
+    if code in expert_mapping:
+        return expert_mapping[code]
+
+    name_upper = name.upper()
+
+    # 2. [세분화된 주도 테마 우선 추출] (조건문 순서 엄수)
+    if any(k in name_upper for k in ["휴머노이드"]):
+        return "휴머노이드"
+    if any(k in name_upper for k in ["데이터센터", "DATACENTER"]):
+        return "데이터센터"
+    if any(k in name_upper for k in ["광통신"]):
+        return "광통신"
+    if any(k in name_upper for k in ["원자력", "SMR"]):
+        return "원자력"
+    if any(k in name_upper for k in ["화장품", "뷰티", "COSMETIC", "BEAUTY"]):
+        return "화장품"
+    if any(k in name_upper for k in ["전선"]):
+        return "전선"
+
+    # 3. [기존 16대 섹터 정밀 분류]
+    if any(
+        k in name_upper
+        for k in ["방산", "국방", "우주", "위성", "AEROSPACE", "DEFENSE"]
+    ):
+        return "방산"
+    if any(
+        k in name_upper
+        for k in [
+            "반도체",
+            "엔비디아",
+            "TSMC",
+            "필라델피아",
+            "HBM",
+            "팹리스",
+            "파운드리",
+            "ASIC",
+            "CHIP",
+        ]
+    ):
+        return "반도체"
+    if any(
+        k in name_upper
+        for k in ["2차전지", "2차 전지", "배터리", "전고체", "음극재", "양극재", "리튬"]
+    ):
+        return "2차전지"
+    if any(k in name_upper for k in ["전력", "그리드", "GRID", "변압기", "ESS"]):
+        return "전력"
+    if any(
+        k in name_upper
+        for k in ["에너지", "태양광", "수소", "원유", "천연가스", "클린", "친환경", "탄소", "기후"]
+    ):
+        return "에너지"
+    if any(k in name_upper for k in ["인프라", "통신", "NETWORK", "네트워크"]):
+        return "인프라"
+    if any(k in name_upper for k in ["기계", "로봇", "로보틱스", "자동화", "장비"]):
+        return "기계"  # 휴머노이드는 위에서 먼저 걸러짐
+    if any(
+        k in name_upper
+        for k in [
+            "바이오",
+            "의료",
+            "헬스케어",
+            "치료제",
+            "신약",
+            "메디컬",
+            "제약",
+            "건강",
+            "CDMO",
+        ]
+    ):
+        return "바이오"
+    if any(
+        k in name_upper
+        for k in [
+            "IT",
+            "소프트웨어",
+            "플랫폼",
+            "메타버스",
+            "AI",
+            "클라우드",
+            "게임",
+            "인터넷",
+            "나스닥",
+            "테크",
+            "빅테크",
+            "사이버보안",
+            "웹툰",
+        ]
+    ):
+        return "IT/플랫폼"
+    if any(
+        k in name_upper
+        for k in ["금융", "은행", "증권", "보험", "리츠", "REITS", "부동산", "배당"]
+    ):
+        return "금융"
+    if any(
+        k in name_upper
+        for k in [
+            "화학",
+            "소재",
+            "희토류",
+            "철강",
+            "비철금속",
+            "금선물",
+            "은선물",
+            "구리",
+            "팔라듐",
+            "농산물",
+            "콩",
+        ]
+    ):
+        return "화학/소재"
+    if any(
+        k in name_upper for k in ["소비재", "여행", "레저", "푸드", "의류", "내수", "럭셔리"]
+    ):
+        return "소비재"  # 화장품은 위에서 먼저 걸러짐
+    if any(
+        k in name_upper
+        for k in ["자동차", "모빌리티", "자율주행", "전기차", "스마트카", "운송"]
+    ):
+        return "자동차"
+    if any(
+        k in name_upper for k in ["K-컬처", "KPOP", "미디어", "엔터", "콘텐츠", "드라마"]
+    ):
+        return "K-컬처"
+    if any(k in name_upper for k in ["조선", "해운", "선박", "SHIPBUILDING"]):
+        return "조선/해운"
+    if any(k in name_upper for k in ["지주사", "그룹", "기업지배구조", "탑픽"]):
+        return "지주사"
+
+    # 4. 범용 지수 및 채권 파생상품은 기타 처리
+    return "기타"
+
+
 def build_market_records(df: pd.DataFrame, market: str) -> list[dict]:
     """시장별 종목 레코드 생성"""
     market_df = df[df["Market"] == market]
-    return [
-        {
-            "code": row["Code"],
-            "name": row["Name"],
-            "yahoosymbol": row["yahoo_symbol"],
-            "ETF": row["ETF"],
-        }
-        for _, row in market_df.iterrows()
-    ]
+    records = []
+    for _, row in market_df.iterrows():
+        is_etf = row["ETF"] == "Y"
+        records.append(
+            {
+                "code": row["Code"],
+                "name": row["Name"],
+                "yahoosymbol": row["yahoo_symbol"],
+                "ETF": row["ETF"],
+                "sector": (
+                    get_accurate_sector(row["Code"], row["Name"]) if is_etf else ""
+                ),
+            }
+        )
+    return records
 
 
 def build_stock_list_payload(df: pd.DataFrame) -> dict:

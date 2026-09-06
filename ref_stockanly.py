@@ -55,6 +55,31 @@ CLOSE_PANEL_HEIGHT = 240
 VOLUME_PANEL_HEIGHT = 133
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 DATE_TOOLTIP = alt.Tooltip("date:T", title="날짜", format="%Y.%m.%d")
+SECTOR_ORDER = [
+    "반도체",
+    "기계",
+    "바이오",
+    "전력",
+    "에너지",
+    "IT/플랫폼",
+    "금융",
+    "화학/소재",
+    "인프라",
+    "2차전지",
+    "지주사",
+    "소비재",
+    "자동차",
+    "K-컬처",
+    "조선/해운",
+    "방산",
+    "전선",
+    "광통신",
+    "데이터센터",
+    "화장품",
+    "원자력",
+    "휴머노이드",
+    "기타",
+]
 
 
 def chart_x_ordinal_encoding(show_labels: bool = True, *, padding_outer: float = 0.05) -> alt.X:
@@ -267,10 +292,23 @@ def load_stock_list() -> pd.DataFrame:
                     "종목명": item["name"],
                     "야후심볼": item["yahoosymbol"],
                     "ETF": item["ETF"],
+                    "섹터": item.get("sector", "") or "",
                 }
             )
 
     return pd.DataFrame(records)
+
+
+def get_sector_options(stock_df: pd.DataFrame) -> list[str]:
+    """ETF 섹터 콤보박스 옵션 생성"""
+    existing = {
+        sector
+        for sector in stock_df.loc[stock_df["ETF"] == "Y", "섹터"].dropna().unique()
+        if str(sector).strip()
+    }
+    ordered = [sector for sector in SECTOR_ORDER if sector in existing]
+    rest = sorted(existing - set(ordered))
+    return ["전체", *ordered, *rest]
 
 
 def apply_stock_list_selection(
@@ -285,12 +323,17 @@ def apply_stock_list_selection(
 
 
 def filter_stock_list(
-    stock_df: pd.DataFrame, market_filter: str, keyword: str
+    stock_df: pd.DataFrame,
+    market_filter: str,
+    keyword: str,
+    sector_filter: str = "전체",
 ) -> pd.DataFrame:
-    """시장·키워드 조건으로 종목 목록 필터"""
+    """시장·섹터·키워드 조건으로 종목 목록 필터"""
     filtered_df = stock_df.copy()
     if market_filter == "ETF":
         filtered_df = filtered_df[filtered_df["ETF"] == "Y"]
+        if sector_filter and sector_filter != "전체":
+            filtered_df = filtered_df[filtered_df["섹터"] == sector_filter]
     elif market_filter != "전체":
         filtered_df = filtered_df[filtered_df["시장"] == market_filter]
 
@@ -319,44 +362,83 @@ def render_stock_list_grid() -> None:
 
     if "stock_list_market_applied" not in st.session_state:
         st.session_state["stock_list_market_applied"] = "전체"
+    if "stock_list_sector_applied" not in st.session_state:
+        st.session_state["stock_list_sector_applied"] = "전체"
     if "stock_list_keyword_applied" not in st.session_state:
         st.session_state["stock_list_keyword_applied"] = ""
+    if "stock_list_market_ui" not in st.session_state:
+        st.session_state["stock_list_market_ui"] = st.session_state[
+            "stock_list_market_applied"
+        ]
+    if "stock_list_sector_ui" not in st.session_state:
+        st.session_state["stock_list_sector_ui"] = st.session_state[
+            "stock_list_sector_applied"
+        ]
+    if "stock_list_keyword_ui" not in st.session_state:
+        st.session_state["stock_list_keyword_ui"] = st.session_state[
+            "stock_list_keyword_applied"
+        ]
 
     market_options = ["전체", "KOSPI", "KOSDAQ", "ETF"]
-    with st.form("stock_list_search_form", clear_on_submit=False):
-        filter_col1, filter_col2, btn_col = st.columns([1, 3, 1])
-        with filter_col1:
-            market_filter = st.selectbox(
-                "시장",
-                options=market_options,
-                index=market_options.index(
-                    st.session_state["stock_list_market_applied"]
-                ),
-            )
-        with filter_col2:
-            keyword = st.text_input(
-                "종목 검색",
-                value=st.session_state["stock_list_keyword_applied"],
-                placeholder="종목코드 또는 종목명 검색",
-            )
-        with btn_col:
-            st.markdown("<div style='height: 1.6rem;'></div>", unsafe_allow_html=True)
-            search_clicked = st.form_submit_button("검색", use_container_width=True)
+    sector_options = get_sector_options(stock_df)
+    if st.session_state["stock_list_sector_ui"] not in sector_options:
+        st.session_state["stock_list_sector_ui"] = "전체"
+
+    filter_col1, filter_col2, filter_col3, btn_col = st.columns([1, 1, 2.5, 1])
+    with filter_col1:
+        market_filter = st.selectbox(
+            "시장",
+            options=market_options,
+            key="stock_list_market_ui",
+        )
+    with filter_col2:
+        sector_enabled = market_filter == "ETF"
+        sector_filter = st.selectbox(
+            "섹터",
+            options=sector_options,
+            disabled=not sector_enabled,
+            key="stock_list_sector_ui",
+            help="시장에서 ETF를 선택하면 섹터 검색이 가능합니다",
+        )
+    with filter_col3:
+        keyword = st.text_input(
+            "종목 검색",
+            placeholder="종목코드 또는 종목명 검색",
+            key="stock_list_keyword_ui",
+        )
+    with btn_col:
+        st.markdown("<div style='height: 1.6rem;'></div>", unsafe_allow_html=True)
+        search_clicked = st.button("검색", use_container_width=True)
 
     if search_clicked:
         st.session_state["stock_list_market_applied"] = market_filter
+        st.session_state["stock_list_sector_applied"] = (
+            sector_filter if sector_enabled else "전체"
+        )
         st.session_state["stock_list_keyword_applied"] = keyword.strip()
 
     display_df = filter_stock_list(
         stock_df,
         st.session_state["stock_list_market_applied"],
         st.session_state["stock_list_keyword_applied"],
+        st.session_state["stock_list_sector_applied"],
     )
 
-    
+    display_columns = ["시장", "종목코드", "종목명", "야후심볼", "ETF"]
+    if st.session_state["stock_list_market_applied"] == "ETF":
+        display_columns.append("섹터")
+    display_df = display_df[display_columns]
+
+    sector_caption = ""
+    if (
+        st.session_state["stock_list_market_applied"] == "ETF"
+        and st.session_state["stock_list_sector_applied"] != "전체"
+    ):
+        sector_caption = f" · 섹터 {st.session_state['stock_list_sector_applied']}"
+
     st.caption(
         f"코스피·코스닥 상장 종목 {len(stock_df):,}개 · "
-        f"검색 결과 {len(display_df):,}개 · "
+        f"검색 결과 {len(display_df):,}개{sector_caption} · "
         "행을 선택하면 150일 분석 그리드 및 차트가 표시됩니다"
     )
     selection = st.dataframe(
