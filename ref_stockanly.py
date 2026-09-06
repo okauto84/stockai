@@ -388,9 +388,13 @@ def render_stock_list_grid() -> None:
     st.markdown(
         """
         <style>
-        /* 시장·섹터 콤보박스 가로 폭 축소 */
+        /* 시장·섹터 콤보박스 가로 폭 축소·밀착 */
         div[data-testid="stSelectbox"] {
-            max-width: 9.5rem;
+            max-width: 8.5rem;
+        }
+        /* 종목 검색 입력창 가로 50% 축소 */
+        div[data-testid="stTextInput"] {
+            max-width: 14rem;
         }
         /* 콤보박스 직접 텍스트 입력 차단 (선택만 가능) */
         div[data-testid="stSelectbox"] input {
@@ -406,22 +410,26 @@ def render_stock_list_grid() -> None:
         unsafe_allow_html=True,
     )
 
-    filter_col1, filter_col2, filter_col3, btn_col, _spacer = st.columns(
-        [0.7, 0.9, 2.6, 0.7, 2.1]
+    # 시장·섹터를 붙여 두고, 검색창은 절반 폭, 간격은 좁게
+    combo_col, search_col, btn_col, _spacer = st.columns(
+        [1.7, 1.3, 0.55, 4.45],
+        gap="small",
     )
-    with filter_col1:
-        market_filter = st.selectbox(
-            "시장",
-            options=market_options,
-            key="stock_list_market_ui",
-        )
-    with filter_col2:
-        sector_filter = st.selectbox(
-            "섹터",
-            options=sector_options,
-            key="stock_list_sector_ui",
-        )
-    with filter_col3:
+    with combo_col:
+        market_col, sector_col = st.columns([1, 1.15], gap="small")
+        with market_col:
+            market_filter = st.selectbox(
+                "시장",
+                options=market_options,
+                key="stock_list_market_ui",
+            )
+        with sector_col:
+            sector_filter = st.selectbox(
+                "섹터",
+                options=sector_options,
+                key="stock_list_sector_ui",
+            )
+    with search_col:
         keyword = st.text_input(
             "종목 검색",
             placeholder="종목코드 또는 종목명 검색",
