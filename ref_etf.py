@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import html
 import json
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 KOSPI_LIST_FILE = (
     Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
 )
 MAX_GRID_ROWS = 12
+PAGE_STOCK = "개별 종목 분석"
 
 
 @st.cache_data
@@ -81,266 +80,77 @@ def build_sector_grid_rows(
     return rows
 
 
-def _name_chips_html(etfs: list[dict[str, str]]) -> str:
-    """종목명을 클릭 가능한 가로 네모박스(칩) HTML로 변환"""
+def open_stock_analysis(symbol: str) -> None:
+    """개별 종목 분석 탭으로 이동하고 150일 분석 그리드/차트를 표시"""
+    st.session_state["symbol"] = symbol.strip().upper()
+    st.session_state["nav_page"] = PAGE_STOCK
+    st.rerun()
+
+
+def toggle_sector_expand(row_idx: int, side: str, sector: str) -> None:
+    """섹터 행 펼침/접기 토글"""
+    key = f"{row_idx}|{side}|{sector}"
+    if st.session_state.get("etf_expanded_key") == key:
+        st.session_state["etf_expanded_key"] = None
+        st.session_state["etf_expanded_sector"] = None
+    else:
+        st.session_state["etf_expanded_key"] = key
+        st.session_state["etf_expanded_sector"] = sector
+
+
+def inject_etf_grid_styles() -> None:
+    """섹터 그리드·종목 칩 스타일"""
+    st.markdown(
+        """
+        <style>
+        .etf-chip-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin: 0.35rem 0 0.75rem 0;
+        }
+        div[data-testid="stHorizontalBlock"] button[kind="secondary"] p,
+        div[data-testid="stHorizontalBlock"] button[kind="primary"] p {
+            font-size: 12px !important;
+        }
+        div.etf-chip-row button {
+            font-size: 10px !important;
+        }
+        div.etf-chip-row button p {
+            font-size: 10px !important;
+            white-space: nowrap;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_etf_name_chips(etfs: list[dict[str, str]], sector: str) -> None:
+    """펼쳐진 섹터의 ETF 종목명을 클릭 가능한 칩으로 표시"""
+    st.caption(f"{sector} 종목 · 클릭 시 개별 종목 분석")
     if not etfs:
-        return '<span class="empty-msg">표시할 ETF가 없습니다.</span>'
-    chips = []
-    for etf in etfs:
-        name = html.escape(etf["name"])
-        symbol = html.escape(etf["yahoosymbol"])
-        chips.append(
-            f'<button type="button" class="name-chip" '
-            f'data-symbol="{symbol}" title="{symbol} 분석 보기">{name}</button>'
-        )
-    return "".join(chips)
+        st.info("표시할 ETF가 없습니다.")
+        return
 
-
-def build_sector_grid_html(
-    grid_rows: list[dict], sector_etfs: dict[str, list[dict[str, str]]]
-) -> str:
-    """클릭 시 행이 펼쳐지고, 종목 클릭 시 개별 분석으로 이동하는 HTML 그리드"""
-    body_rows: list[str] = []
-
-    for idx, row in enumerate(grid_rows):
-        left_sector = row["left_sector"]
-        left_count = row["left_count"]
-        right_sector = row["right_sector"]
-        right_count = row["right_count"]
-
-        left_cell = (
-            f'<td class="sector clickable" data-detail="detail-{idx}-L" '
-            f'title="클릭하여 종목 목록 펼치기">{html.escape(left_sector)}</td>'
-            if left_sector
-            else '<td class="sector"></td>'
-        )
-        left_count_cell = (
-            f'<td class="count">{left_count}</td>'
-            if left_count is not None
-            else '<td class="count"></td>'
-        )
-        right_cell = (
-            f'<td class="sector clickable" data-detail="detail-{idx}-R" '
-            f'title="클릭하여 종목 목록 펼치기">{html.escape(right_sector)}</td>'
-            if right_sector
-            else '<td class="sector"></td>'
-        )
-        right_count_cell = (
-            f'<td class="count">{right_count}</td>'
-            if right_count is not None
-            else '<td class="count"></td>'
-        )
-
-        left_etfs = sector_etfs.get(left_sector, []) if left_sector else []
-        right_etfs = sector_etfs.get(right_sector, []) if right_sector else []
-
-        body_rows.append(
-            f"""
-            <tr class="main-row" id="row-{idx}">
-              {left_cell}
-              {left_count_cell}
-              {right_cell}
-              {right_count_cell}
-            </tr>
-            <tr class="detail-row" id="detail-{idx}-L">
-              <td colspan="4">
-                <div class="detail-wrap">
-                  <div class="detail-title">{html.escape(left_sector)} 종목 · 클릭 시 개별 분석</div>
-                  <div class="chip-row">{_name_chips_html(left_etfs)}</div>
-                </div>
-              </td>
-            </tr>
-            <tr class="detail-row" id="detail-{idx}-R">
-              <td colspan="4">
-                <div class="detail-wrap">
-                  <div class="detail-title">{html.escape(right_sector)} 종목 · 클릭 시 개별 분석</div>
-                  <div class="chip-row">{_name_chips_html(right_etfs)}</div>
-                </div>
-              </td>
-            </tr>
-            """
-        )
-
-    return f"""
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<style>
-  :root {{
-    --border: #d0d7de;
-    --header-bg: #f6f8fa;
-    --hover: #eef6ff;
-    --active: #dbeafe;
-    --chip-bg: #f8fafc;
-    --chip-border: #cbd5e1;
-    --chip-hover: #dbeafe;
-    --text: #0f172a;
-    --muted: #64748b;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0;
-    padding: 0;
-    font-family: "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-    font-size: 12px;
-    color: var(--text);
-    background: transparent;
-  }}
-  table.sector-grid {{
-    width: 100%;
-    border-collapse: collapse;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    background: #fff;
-    font-size: 12px;
-  }}
-  table.sector-grid th,
-  table.sector-grid td {{
-    border: 1px solid var(--border);
-    padding: 8px 10px;
-    vertical-align: middle;
-    font-size: 12px;
-  }}
-  table.sector-grid thead th {{
-    background: var(--header-bg);
-    font-weight: 700;
-    text-align: left;
-    font-size: 12px;
-  }}
-  td.sector {{
-    width: 34%;
-  }}
-  td.count {{
-    width: 16%;
-    text-align: left;
-  }}
-  td.clickable {{
-    cursor: pointer;
-    user-select: none;
-    transition: background 0.15s ease;
-  }}
-  td.clickable:hover {{
-    background: var(--hover);
-  }}
-  td.clickable.active {{
-    background: var(--active);
-    font-weight: 600;
-  }}
-  tr.detail-row {{
-    display: none;
-  }}
-  tr.detail-row.open {{
-    display: table-row;
-  }}
-  .detail-wrap {{
-    padding: 6px 2px 4px;
-  }}
-  .detail-title {{
-    font-size: 10px;
-    color: var(--muted);
-    margin-bottom: 8px;
-    font-weight: 600;
-  }}
-  .chip-row {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    font-size: 10px;
-  }}
-  .name-chip {{
-    display: inline-block;
-    padding: 5px 10px;
-    border: 1px solid var(--chip-border);
-    border-radius: 6px;
-    background: var(--chip-bg);
-    white-space: nowrap;
-    line-height: 1.3;
-    font-size: 10px;
-    color: var(--text);
-    cursor: pointer;
-    font-family: inherit;
-  }}
-  .name-chip:hover {{
-    background: var(--chip-hover);
-    border-color: #93c5fd;
-  }}
-  .empty-msg {{
-    color: var(--muted);
-    font-size: 10px;
-  }}
-</style>
-</head>
-<body>
-  <table class="sector-grid">
-    <thead>
-      <tr>
-        <th>섹터</th>
-        <th>수</th>
-        <th>섹터</th>
-        <th>수</th>
-      </tr>
-    </thead>
-    <tbody>
-      {"".join(body_rows)}
-    </tbody>
-  </table>
-  <script>
-    (function () {{
-      function closeAll(exceptId) {{
-        document.querySelectorAll("tr.detail-row.open").forEach(function (row) {{
-          if (row.id !== exceptId) row.classList.remove("open");
-        }});
-        document.querySelectorAll("td.clickable.active").forEach(function (cell) {{
-          if (cell.getAttribute("data-detail") !== exceptId) {{
-            cell.classList.remove("active");
-          }}
-        }});
-      }}
-
-      document.querySelectorAll("td.clickable").forEach(function (cell) {{
-        cell.addEventListener("click", function () {{
-          var detailId = cell.getAttribute("data-detail");
-          var detail = document.getElementById(detailId);
-          if (!detail) return;
-
-          var willOpen = !detail.classList.contains("open");
-          closeAll(willOpen ? detailId : null);
-          detail.classList.toggle("open", willOpen);
-          cell.classList.toggle("active", willOpen);
-
-          var height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-          window.parent.postMessage({{ isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: height }}, "*");
-        }});
-      }});
-
-      document.querySelectorAll("button.name-chip").forEach(function (chip) {{
-        chip.addEventListener("click", function (event) {{
-          event.preventDefault();
-          event.stopPropagation();
-          var symbol = chip.getAttribute("data-symbol");
-          if (!symbol) return;
-          try {{
-            var url = new URL(window.parent.location.href);
-            url.searchParams.set("goto", "stock");
-            url.searchParams.set("symbol", symbol);
-            window.parent.location.href = url.toString();
-          }} catch (err) {{
-            console.error(err);
-          }}
-        }});
-      }});
-    }})();
-  </script>
-</body>
-</html>
-"""
+    # 한 줄에 여러 칩이 오도록 다열 배치
+    cols_per_row = 4
+    for start in range(0, len(etfs), cols_per_row):
+        chunk = etfs[start : start + cols_per_row]
+        cols = st.columns(cols_per_row, gap="small")
+        for col, etf in zip(cols, chunk):
+            with col:
+                if st.button(
+                    etf["name"],
+                    key=f"etf_chip_{sector}_{etf['yahoosymbol']}",
+                    use_container_width=True,
+                    help=f"{etf['yahoosymbol']} 분석 보기",
+                ):
+                    open_stock_analysis(etf["yahoosymbol"])
 
 
 def render_sector_count_grid() -> None:
-    """섹터별 ETF 종목 수 HTML 그리드 표시"""
+    """섹터별 ETF 종목 수 그리드 및 종목 클릭 분석 이동"""
     if not KOSPI_LIST_FILE.exists():
         st.warning(f"종목 목록 파일을 찾을 수 없습니다: {KOSPI_LIST_FILE}")
         return
@@ -358,6 +168,13 @@ def render_sector_count_grid() -> None:
         st.info("표시할 ETF 섹터 데이터가 없습니다.")
         return
 
+    if "etf_expanded_key" not in st.session_state:
+        st.session_state["etf_expanded_key"] = None
+    if "etf_expanded_sector" not in st.session_state:
+        st.session_state["etf_expanded_sector"] = None
+
+    inject_etf_grid_styles()
+
     grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
     total_etf = int(sector_df["수"].sum())
     st.caption(
@@ -366,13 +183,60 @@ def render_sector_count_grid() -> None:
         "섹터 클릭 시 종목 목록 · 종목 클릭 시 개별 종목 분석"
     )
 
-    max_names = max((len(etfs) for etfs in sector_etfs.values()), default=0)
-    estimated_height = 48 + len(grid_rows) * 38 + 120 + min(max_names, 40) * 4
-    components.html(
-        build_sector_grid_html(grid_rows, sector_etfs),
-        height=max(estimated_height, 720),
-        scrolling=True,
-    )
+    header = st.columns([3, 1, 3, 1], gap="small")
+    header[0].markdown("**섹터**")
+    header[1].markdown("**수**")
+    header[2].markdown("**섹터**")
+    header[3].markdown("**수**")
+
+    for idx, row in enumerate(grid_rows):
+        left_sector = row["left_sector"]
+        left_count = row["left_count"]
+        right_sector = row["right_sector"]
+        right_count = row["right_count"]
+
+        left_key = f"{idx}|L|{left_sector}" if left_sector else ""
+        right_key = f"{idx}|R|{right_sector}" if right_sector else ""
+        expanded_key = st.session_state.get("etf_expanded_key")
+
+        c1, c2, c3, c4 = st.columns([3, 1, 3, 1], gap="small")
+        with c1:
+            if left_sector:
+                if st.button(
+                    left_sector,
+                    key=f"etf_sector_left_{idx}",
+                    use_container_width=True,
+                    type="primary" if expanded_key == left_key else "secondary",
+                ):
+                    toggle_sector_expand(idx, "L", left_sector)
+                    st.rerun()
+        with c2:
+            if left_count is not None:
+                st.markdown(
+                    f"<div style='padding-top:0.45rem; font-size:12px;'>{left_count}</div>",
+                    unsafe_allow_html=True,
+                )
+        with c3:
+            if right_sector:
+                if st.button(
+                    right_sector,
+                    key=f"etf_sector_right_{idx}",
+                    use_container_width=True,
+                    type="primary" if expanded_key == right_key else "secondary",
+                ):
+                    toggle_sector_expand(idx, "R", right_sector)
+                    st.rerun()
+        with c4:
+            if right_count is not None:
+                st.markdown(
+                    f"<div style='padding-top:0.45rem; font-size:12px;'>{right_count}</div>",
+                    unsafe_allow_html=True,
+                )
+
+        if expanded_key == left_key and left_sector:
+            render_etf_name_chips(sector_etfs.get(left_sector, []), left_sector)
+        elif expanded_key == right_key and right_sector:
+            render_etf_name_chips(sector_etfs.get(right_sector, []), right_sector)
 
 
 def render_page() -> None:
