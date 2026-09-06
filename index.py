@@ -107,6 +107,24 @@ def render_top_bar() -> str:
     return page
 
 
+def clear_caches_and_reload_stock_list() -> None:
+    """세션 최초 진입 시 캐시를 비우고 kospilist.json을 다시 로드"""
+    if st.session_state.get("app_data_reloaded"):
+        return
+
+    st.cache_data.clear()
+    st.cache_resource.clear()
+
+    import ref_etf
+    import ref_stockanly
+
+    ref_etf.load_etf_sector_data.clear()
+    ref_stockanly.load_stock_list.clear()
+    ref_etf.load_etf_sector_data()
+    ref_stockanly.load_stock_list()
+    st.session_state["app_data_reloaded"] = True
+
+
 def main() -> None:
     st.set_page_config(
         page_title="AI Stock",
@@ -119,6 +137,7 @@ def main() -> None:
     import ref_etf
     import ref_stockanly
 
+    clear_caches_and_reload_stock_list()
     inject_styles()
 
     if "symbol" not in st.session_state:

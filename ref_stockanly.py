@@ -451,13 +451,7 @@ def render_stock_list_grid() -> None:
         st.session_state["stock_list_sector_applied"],
     )
 
-    display_columns = ["시장", "종목코드", "종목명", "야후심볼", "ETF"]
-    show_sector = (
-        st.session_state["stock_list_market_applied"] == "ETF"
-        or st.session_state["stock_list_sector_applied"] != "전체"
-    )
-    if show_sector:
-        display_columns.append("섹터")
+    display_columns = ["시장", "종목코드", "종목명", "야후심볼", "ETF", "섹터"]
     display_df = display_df[display_columns]
 
     sector_caption = ""
@@ -467,7 +461,6 @@ def render_stock_list_grid() -> None:
     st.caption(
         f"코스피·코스닥 상장 종목 {len(stock_df):,}개 · "
         f"검색 결과 {len(display_df):,}개{sector_caption} · "
-        "행을 선택하면 150일 분석 그리드 및 차트가 표시됩니다"
     )
     selection = st.dataframe(
         display_df,
