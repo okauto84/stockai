@@ -170,7 +170,7 @@ def build_sector_grid_html(
     margin: 0;
     padding: 0;
     font-family: "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text);
     background: transparent;
   }}
@@ -181,17 +181,20 @@ def build_sector_grid_html(
     border-radius: 8px;
     overflow: hidden;
     background: #fff;
+    font-size: 12px;
   }}
   table.sector-grid th,
   table.sector-grid td {{
     border: 1px solid var(--border);
     padding: 8px 10px;
     vertical-align: middle;
+    font-size: 12px;
   }}
   table.sector-grid thead th {{
     background: var(--header-bg);
     font-weight: 700;
     text-align: left;
+    font-size: 12px;
   }}
   td.sector {{
     width: 34%;
@@ -222,7 +225,7 @@ def build_sector_grid_html(
     padding: 6px 2px 4px;
   }}
   .detail-title {{
-    font-size: 12px;
+    font-size: 10px;
     color: var(--muted);
     margin-bottom: 8px;
     font-weight: 600;
@@ -232,6 +235,7 @@ def build_sector_grid_html(
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+    font-size: 10px;
   }}
   .name-chip {{
     display: inline-block;
@@ -241,9 +245,11 @@ def build_sector_grid_html(
     background: var(--chip-bg);
     white-space: nowrap;
     line-height: 1.3;
+    font-size: 10px;
   }}
   .empty-msg {{
     color: var(--muted);
+    font-size: 10px;
   }}
 </style>
 </head>
