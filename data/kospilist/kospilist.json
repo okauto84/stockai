@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-06T15:27:02Z",
+  "updated_at": "2026-09-06T15:32:48Z",
   "source": "FinanceDataReader(KRX) + Naver Finance ETF list + Yahoo Finance symbol mapping",
   "markets": {
     "KOSPI": [
@@ -5765,6 +5765,13 @@
         "sector": "반도체"
       },
       {
+        "code": "0229F0",
+        "name": "마이티 신약포커스바이오액티브",
+        "yahoosymbol": "0229F0.KS",
+        "ETF": "Y",
+        "sector": "바이오"
+      },
+      {
         "code": "023000",
         "name": "삼원강재",
         "yahoosymbol": "023000.KS",
@@ -5782,6 +5789,13 @@
         "code": "0231Z0",
         "name": "KODEX 코리아TDF2065액티브 적격",
         "yahoosymbol": "0231Z0.KS",
+        "ETF": "Y",
+        "sector": "기타"
+      },
+      {
+        "code": "0232A0",
+        "name": "MIDAS 머니마켓액티브",
+        "yahoosymbol": "0232A0.KS",
         "ETF": "Y",
         "sector": "기타"
       },
@@ -5807,11 +5821,25 @@
         "sector": "기타"
       },
       {
+        "code": "0233N0",
+        "name": "RISE 글로벌AI낸드메모리반도체",
+        "yahoosymbol": "0233N0.KS",
+        "ETF": "Y",
+        "sector": "기타"
+      },
+      {
         "code": "023450",
         "name": "동남합성",
         "yahoosymbol": "023450.KS",
         "ETF": "N",
         "sector": ""
+      },
+      {
+        "code": "0234N0",
+        "name": "KIWOOM 삼성SK그룹TOP4+",
+        "yahoosymbol": "0234N0.KS",
+        "ETF": "Y",
+        "sector": "지주사"
       },
       {
         "code": "023530",
@@ -20096,13 +20124,6 @@
         "sector": ""
       },
       {
-        "code": "096610",
-        "name": "알에프세미",
-        "yahoosymbol": "096610.KQ",
-        "ETF": "N",
-        "sector": ""
-      },
-      {
         "code": "096630",
         "name": "에스코넥",
         "yahoosymbol": "096630.KQ",
@@ -25325,6 +25346,13 @@
         "sector": ""
       },
       {
+        "code": "386380",
+        "name": "스카이랩스",
+        "yahoosymbol": "386380.KQ",
+        "ETF": "N",
+        "sector": ""
+      },
+      {
         "code": "387570",
         "name": "파인메딕스",
         "yahoosymbol": "387570.KQ",
@@ -25494,7 +25522,7 @@
       },
       {
         "code": "396300",
-        "name": "세아메카닉스",
+        "name": "HT로보틱스",
         "yahoosymbol": "396300.KQ",
         "ETF": "N",
         "sector": ""
@@ -27154,9 +27182,9 @@
     ]
   },
   "counts": {
-    "KOSPI": 2106,
+    "KOSPI": 2110,
     "KOSDAQ": 1772,
-    "ETF": 1163,
-    "total": 3878
+    "ETF": 1167,
+    "total": 3882
   }
 }
