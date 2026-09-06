@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-06T13:55:00Z",
+  "updated_at": "2026-09-06T15:27:02Z",
   "source": "FinanceDataReader(KRX) + Naver Finance ETF list + Yahoo Finance symbol mapping",
   "markets": {
     "KOSPI": [
@@ -50,7 +50,7 @@
         "name": "TIGER 엔비디아미국채커버드콜밸런스(합성)",
         "yahoosymbol": "0000D0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0000H0",
@@ -281,7 +281,7 @@
         "name": "1Q 미국배당TOP30",
         "yahoosymbol": "0004G0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "000500",
@@ -421,7 +421,7 @@
         "name": "PLUS 글로벌원자력밸류체인",
         "yahoosymbol": "0007G0.KS",
         "ETF": "Y",
-        "sector": "원자력"
+        "sector": "기타"
       },
       {
         "code": "0007N0",
@@ -491,7 +491,7 @@
         "name": "TIGER 미국배당다우존스타겟데일리커버드콜",
         "yahoosymbol": "0008S0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "0008T0",
@@ -694,7 +694,7 @@
         "name": "RISE 미국은행TOP10",
         "yahoosymbol": "0013P0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "0013R0",
@@ -827,14 +827,14 @@
         "name": "KoAct 미국나스닥성장기업액티브",
         "yahoosymbol": "0015B0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0015E0",
         "name": "KIWOOM 엔비디아미국30년국채혼합액티브(H)",
         "yahoosymbol": "0015E0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0015F0",
@@ -988,7 +988,7 @@
         "name": "TIME 미국나스닥100채권혼합50액티브",
         "yahoosymbol": "0019K0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "002020",
@@ -1338,7 +1338,7 @@
         "name": "KODEX 미국금융테크액티브",
         "yahoosymbol": "0028X0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "002900",
@@ -1625,7 +1625,7 @@
         "name": "PLUS 글로벌휴머노이드로봇액티브",
         "yahoosymbol": "0035T0.KS",
         "ETF": "Y",
-        "sector": "휴머노이드"
+        "sector": "기타"
       },
       {
         "code": "003610",
@@ -1674,14 +1674,14 @@
         "name": "RISE 미국휴머노이드로봇",
         "yahoosymbol": "0036R0.KS",
         "ETF": "Y",
-        "sector": "휴머노이드"
+        "sector": "기타"
       },
       {
         "code": "0036Z0",
         "name": "RISE 미국천연가스밸류체인",
         "yahoosymbol": "0036Z0.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "003720",
@@ -1716,7 +1716,7 @@
         "name": "KODEX 미국휴머노이드로봇",
         "yahoosymbol": "0038A0.KS",
         "ETF": "Y",
-        "sector": "휴머노이드"
+        "sector": "기타"
       },
       {
         "code": "003920",
@@ -1779,7 +1779,7 @@
         "name": "HANARO 글로벌피지컬AI액티브",
         "yahoosymbol": "0040S0.KS",
         "ETF": "Y",
-        "sector": "기계"
+        "sector": "기타"
       },
       {
         "code": "0040X0",
@@ -1835,7 +1835,7 @@
         "name": "KODEX 미국AI소프트웨어TOP10",
         "yahoosymbol": "0041D0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0041E0",
@@ -1912,7 +1912,7 @@
         "name": "TIME 차이나AI테크액티브",
         "yahoosymbol": "0043Y0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "004410",
@@ -1996,7 +1996,7 @@
         "name": "ACE 미국배당퀄리티",
         "yahoosymbol": "0046Y0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "004700",
@@ -2031,28 +2031,28 @@
         "name": "TIGER 차이나테크TOP10",
         "yahoosymbol": "0047A0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0047N0",
         "name": "PLUS 차이나AI테크TOP10",
         "yahoosymbol": "0047N0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0047P0",
         "name": "RISE 테슬라고정테크100",
         "yahoosymbol": "0047P0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0047R0",
         "name": "RISE 팔란티어고정테크100",
         "yahoosymbol": "0047R0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "004800",
@@ -2108,7 +2108,7 @@
         "name": "KODEX 차이나휴머노이드로봇",
         "yahoosymbol": "0048K0.KS",
         "ETF": "Y",
-        "sector": "휴머노이드"
+        "sector": "기타"
       },
       {
         "code": "004910",
@@ -2171,14 +2171,14 @@
         "name": "ACE 미국배당퀄리티채권혼합50",
         "yahoosymbol": "0049K0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "0049M0",
         "name": "ACE 미국배당퀄리티+커버드콜액티브",
         "yahoosymbol": "0049M0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "005010",
@@ -2213,7 +2213,7 @@
         "name": "PLUS 미국AI에이전트",
         "yahoosymbol": "0050E0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "005110",
@@ -2234,14 +2234,14 @@
         "name": "KoAct 브로드컴밸류체인액티브",
         "yahoosymbol": "0051A0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0051G0",
         "name": "SOL 미국원자력SMR",
         "yahoosymbol": "0051G0.KS",
         "ETF": "Y",
-        "sector": "원자력"
+        "sector": "기타"
       },
       {
         "code": "005250",
@@ -2339,7 +2339,7 @@
         "name": "TIGER 차이나휴머노이드로봇",
         "yahoosymbol": "0053L0.KS",
         "ETF": "Y",
-        "sector": "휴머노이드"
+        "sector": "기타"
       },
       {
         "code": "0053M0",
@@ -2703,7 +2703,7 @@
         "name": "KODEX 차이나테크TOP10",
         "yahoosymbol": "0065G0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "006650",
@@ -2745,7 +2745,7 @@
         "name": "TIGER 차이나AI소프트웨어",
         "yahoosymbol": "0067Y0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "006800",
@@ -2808,7 +2808,7 @@
         "name": "1Q 미국나스닥100",
         "yahoosymbol": "0069M0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "007070",
@@ -2997,7 +2997,7 @@
         "name": "ACE BYD밸류체인액티브",
         "yahoosymbol": "0079X0.KS",
         "ETF": "Y",
-        "sector": "2차전지"
+        "sector": "기타"
       },
       {
         "code": "008040",
@@ -3060,7 +3060,7 @@
         "name": "HANARO 유럽방산",
         "yahoosymbol": "0082F0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0082V0",
@@ -3088,7 +3088,7 @@
         "name": "1Q 미국메디컬AI",
         "yahoosymbol": "0083S0.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "008420",
@@ -3109,7 +3109,7 @@
         "name": "KIWOOM 미국테크100월간목표헤지액티브",
         "yahoosymbol": "0084D0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0084E0",
@@ -3186,7 +3186,7 @@
         "name": "ACE 차이나AI빅테크TOP2+액티브",
         "yahoosymbol": "0087F0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "008870",
@@ -3221,7 +3221,7 @@
         "name": "PLUS 미국나스닥100미국채혼합50",
         "yahoosymbol": "0089B0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0089C0",
@@ -3382,14 +3382,14 @@
         "name": "RISE 엔비디아고정테크100",
         "yahoosymbol": "0093B0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0093D0",
         "name": "KoAct 팔란티어밸류체인액티브",
         "yahoosymbol": "0093D0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "009410",
@@ -3452,7 +3452,7 @@
         "name": "RISE 차이나테크TOP10위클리타겟커버드콜",
         "yahoosymbol": "0094L0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0094M0",
@@ -3627,14 +3627,14 @@
         "name": "TIGER 미국AI소프트웨어TOP4Plus",
         "yahoosymbol": "0102A0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0102X0",
         "name": "ACE 유럽방산TOP10",
         "yahoosymbol": "0102X0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0103T0",
@@ -3662,7 +3662,7 @@
         "name": "KoAct 미국나스닥채권혼합50액티브",
         "yahoosymbol": "0104H0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0104N0",
@@ -3739,7 +3739,7 @@
         "name": "KIWOOM 미국고배당&AI테크",
         "yahoosymbol": "0107F0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "010820",
@@ -3823,7 +3823,7 @@
         "name": "1Q 미국나스닥100미국채혼합50액티브",
         "yahoosymbol": "0111P0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "011200",
@@ -3886,14 +3886,14 @@
         "name": "TIME 글로벌탑픽액티브",
         "yahoosymbol": "0113D0.KS",
         "ETF": "Y",
-        "sector": "지주사"
+        "sector": "기타"
       },
       {
         "code": "0113G0",
         "name": "KoAct 미국바이오헬스케어액티브",
         "yahoosymbol": "0113G0.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "0113P0",
@@ -3914,7 +3914,7 @@
         "name": "RISE 글로벌게임테크TOP3Plus",
         "yahoosymbol": "0114X0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "011500",
@@ -3928,7 +3928,7 @@
         "name": "RISE 미국고배당다우존스TOP10",
         "yahoosymbol": "0115C0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "0115D0",
@@ -4012,14 +4012,14 @@
         "name": "SOL 미국넥스트테크TOP10액티브",
         "yahoosymbol": "0118S0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0118Z0",
         "name": "ACE 미국AI테크핵심산업액티브",
         "yahoosymbol": "0118Z0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "011930",
@@ -4117,7 +4117,7 @@
         "name": "TIGER 미국AI전력SMR",
         "yahoosymbol": "0123G0.KS",
         "ETF": "Y",
-        "sector": "원자력"
+        "sector": "기타"
       },
       {
         "code": "0123S0",
@@ -4187,21 +4187,21 @@
         "name": "RISE 미국AI클라우드인프라",
         "yahoosymbol": "0127R0.KS",
         "ETF": "Y",
-        "sector": "인프라"
+        "sector": "기타"
       },
       {
         "code": "0127T0",
         "name": "KIWOOM 미국S&P500&배당다우존스비중전환",
         "yahoosymbol": "0127T0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "0127V0",
         "name": "KIWOOM 미국S&P500 TOP10&배당다우비중전환",
         "yahoosymbol": "0127V0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "012800",
@@ -4215,7 +4215,7 @@
         "name": "PLUS 차이나항셍테크위클리타겟커버드콜",
         "yahoosymbol": "0128D0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "013000",
@@ -4236,7 +4236,7 @@
         "name": "1Q 미국우주항공테크",
         "yahoosymbol": "0131V0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0131W0",
@@ -4257,7 +4257,7 @@
         "name": "KODEX 미국원자력SMR",
         "yahoosymbol": "0132H0.KS",
         "ETF": "Y",
-        "sector": "원자력"
+        "sector": "기타"
       },
       {
         "code": "0132K0",
@@ -4278,7 +4278,7 @@
         "name": "TIGER 차이나증권",
         "yahoosymbol": "0133E0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "013520",
@@ -4425,7 +4425,7 @@
         "name": "TIGER 미국AI데이터센터TOP4Plus",
         "yahoosymbol": "0142D0.KS",
         "ETF": "Y",
-        "sector": "데이터센터"
+        "sector": "기타"
       },
       {
         "code": "014440",
@@ -4558,7 +4558,7 @@
         "name": "KODEX 미국AI반도체TOP3플러스",
         "yahoosymbol": "0151S0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "015230",
@@ -4607,7 +4607,7 @@
         "name": "PLUS 미국고배당주액티브",
         "yahoosymbol": "0153X0.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "0154F0",
@@ -4621,7 +4621,7 @@
         "name": "KoAct 차이나바이오헬스케어액티브",
         "yahoosymbol": "0154H0.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "015590",
@@ -4635,7 +4635,7 @@
         "name": "ACE 미국SMR원자력TOP10",
         "yahoosymbol": "0155M0.KS",
         "ETF": "Y",
-        "sector": "원자력"
+        "sector": "기타"
       },
       {
         "code": "0155N0",
@@ -4677,7 +4677,7 @@
         "name": "KODEX 차이나AI반도체TOP10",
         "yahoosymbol": "0162L0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0162M0",
@@ -4733,7 +4733,7 @@
         "name": "RISE 차이나AI반도체TOP4Plus",
         "yahoosymbol": "0164G0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "016580",
@@ -4810,7 +4810,7 @@
         "name": "KODEX 미국우주항공",
         "yahoosymbol": "0167Z0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "016800",
@@ -4880,14 +4880,14 @@
         "name": "KODEX 미국AI광통신네트워크",
         "yahoosymbol": "0173Y0.KS",
         "ETF": "Y",
-        "sector": "광통신"
+        "sector": "기타"
       },
       {
         "code": "0174B0",
         "name": "KoAct 글로벌AI메모리반도체액티브",
         "yahoosymbol": "0174B0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0174J0",
@@ -4922,7 +4922,7 @@
         "name": "RISE 미국AI전력인프라액티브",
         "yahoosymbol": "0176E0.KS",
         "ETF": "Y",
-        "sector": "전력"
+        "sector": "기타"
       },
       {
         "code": "0176P0",
@@ -4985,7 +4985,7 @@
         "name": "IBK 미국AI TOP10국채혼합50",
         "yahoosymbol": "0178H0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "017900",
@@ -5013,21 +5013,21 @@
         "name": "ACE 미국우주테크액티브",
         "yahoosymbol": "0180V0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0181B0",
         "name": "HANARO 미국AI메모리반도체TOP4+",
         "yahoosymbol": "0181B0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0181L0",
         "name": "SOL 미국우주항공TOP10",
         "yahoosymbol": "0181L0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "018250",
@@ -5062,7 +5062,7 @@
         "name": "TIGER 미국우주테크",
         "yahoosymbol": "0183J0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0183V0",
@@ -5118,7 +5118,7 @@
         "name": "TIME 글로벌휴머노이드로봇산업액티브",
         "yahoosymbol": "0185L0.KS",
         "ETF": "Y",
-        "sector": "휴머노이드"
+        "sector": "기타"
       },
       {
         "code": "018670",
@@ -5132,7 +5132,7 @@
         "name": "KoAct 미국로봇피지컬AI액티브",
         "yahoosymbol": "0186L0.KS",
         "ETF": "Y",
-        "sector": "기계"
+        "sector": "기타"
       },
       {
         "code": "0186S0",
@@ -5181,7 +5181,7 @@
         "name": "KIWOOM 미국AI테크하이베타",
         "yahoosymbol": "0190M0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0190Y0",
@@ -5510,7 +5510,7 @@
         "name": "KIWOOM 미국우주데이터센터인프라",
         "yahoosymbol": "0207Z0.KS",
         "ETF": "Y",
-        "sector": "데이터센터"
+        "sector": "기타"
       },
       {
         "code": "0208N0",
@@ -5573,14 +5573,14 @@
         "name": "HANARO 미국AI광통신TOP10",
         "yahoosymbol": "0215T0.KS",
         "ETF": "Y",
-        "sector": "광통신"
+        "sector": "기타"
       },
       {
         "code": "0216K0",
         "name": "KIWOOM 미국우주테크TOP2채권혼합50",
         "yahoosymbol": "0216K0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0216Z0",
@@ -5601,7 +5601,7 @@
         "name": "RISE 미국우주&로봇TOP2미국채혼합50",
         "yahoosymbol": "0218J0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0218K0",
@@ -5706,28 +5706,28 @@
         "name": "TIGER 미국테크NYSE100액티브",
         "yahoosymbol": "0223R0.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "0224D0",
         "name": "KIWOOM 미국CPU반도체TOP4+",
         "yahoosymbol": "0224D0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0224X0",
         "name": "1Q 엔비디아알파벳미국채혼합50",
         "yahoosymbol": "0224X0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0225V0",
         "name": "KODEX 미국CPU반도체TOP10",
         "yahoosymbol": "0225V0.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "0226A0",
@@ -5755,7 +5755,7 @@
         "name": "RISE 미국우주위성통신",
         "yahoosymbol": "0227K0.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "0228G0",
@@ -7764,7 +7764,7 @@
         "name": "TIGER 미국나스닥100",
         "yahoosymbol": "133690.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "133820",
@@ -8317,7 +8317,7 @@
         "name": "ACE 미국부동산리츠(합성 H)",
         "yahoosymbol": "181480.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "181710",
@@ -8331,7 +8331,7 @@
         "name": "TIGER 미국MSCI리츠(합성 H)",
         "yahoosymbol": "182480.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "182490",
@@ -8366,7 +8366,7 @@
         "name": "KODEX 미국S&P바이오(합성)",
         "yahoosymbol": "185680.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "185750",
@@ -8513,7 +8513,7 @@
         "name": "TIGER 미국나스닥바이오",
         "yahoosymbol": "203780.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "204320",
@@ -8604,7 +8604,7 @@
         "name": "PLUS 미국다우존스고배당주(합성 H)",
         "yahoosymbol": "213630.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "214320",
@@ -8674,14 +8674,14 @@
         "name": "KODEX 미국S&P500에너지(합성)",
         "yahoosymbol": "218420.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "219390",
         "name": "RISE 미국S&P원유생산기업(합성 H)",
         "yahoosymbol": "219390.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "219480",
@@ -9087,7 +9087,7 @@
         "name": "TIGER S&P글로벌헬스케어(합성)",
         "yahoosymbol": "248270.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "249420",
@@ -9493,21 +9493,21 @@
         "name": "TIGER S&P글로벌인프라(합성)",
         "yahoosymbol": "269370.KS",
         "ETF": "Y",
-        "sector": "인프라"
+        "sector": "기타"
       },
       {
         "code": "269420",
         "name": "KODEX S&P글로벌인프라(합성)",
         "yahoosymbol": "269420.KS",
         "ETF": "Y",
-        "sector": "인프라"
+        "sector": "기타"
       },
       {
         "code": "269530",
         "name": "PLUS S&P글로벌인프라",
         "yahoosymbol": "269530.KS",
         "ETF": "Y",
-        "sector": "인프라"
+        "sector": "기타"
       },
       {
         "code": "269540",
@@ -9675,21 +9675,21 @@
         "name": "RISE 글로벌테크놀로지(합성 H)",
         "yahoosymbol": "276650.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "276970",
         "name": "KODEX 미국S&P500배당귀족커버드콜(합성 H)",
         "yahoosymbol": "276970.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "276990",
         "name": "KODEX 글로벌로봇(합성)",
         "yahoosymbol": "276990.KS",
         "ETF": "Y",
-        "sector": "기계"
+        "sector": "기타"
       },
       {
         "code": "277540",
@@ -9780,7 +9780,7 @@
         "name": "ACE 미국IT인터넷(합성 H)",
         "yahoosymbol": "280320.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "280360",
@@ -9899,7 +9899,7 @@
         "name": "PLUS 미국나스닥테크",
         "yahoosymbol": "287180.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "289040",
@@ -10235,7 +10235,7 @@
         "name": "KODEX 미국나스닥100선물(H)",
         "yahoosymbol": "304940.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "305050",
@@ -10361,7 +10361,7 @@
         "name": "KODEX 미국빅테크10(H)",
         "yahoosymbol": "314250.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "314700",
@@ -10739,14 +10739,14 @@
         "name": "KODEX 일본부동산리츠(H)",
         "yahoosymbol": "352540.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "352560",
         "name": "KODEX 미국부동산리츠(H)",
         "yahoosymbol": "352560.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "352820",
@@ -10774,14 +10774,14 @@
         "name": "RISE 미국고정배당우선증권",
         "yahoosymbol": "354240.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "354350",
         "name": "HANARO 글로벌럭셔리S&P(합성)",
         "yahoosymbol": "354350.KS",
         "ETF": "Y",
-        "sector": "소비재"
+        "sector": "기타"
       },
       {
         "code": "354500",
@@ -10977,7 +10977,7 @@
         "name": "ACE 미국나스닥100",
         "yahoosymbol": "367380.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "367740",
@@ -11012,7 +11012,7 @@
         "name": "RISE 미국나스닥100",
         "yahoosymbol": "368590.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "368680",
@@ -11026,49 +11026,49 @@
         "name": "RISE 차이나항셍테크",
         "yahoosymbol": "371150.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "371160",
         "name": "TIGER 차이나항셍테크",
         "yahoosymbol": "371160.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "371450",
         "name": "TIGER 글로벌클라우드컴퓨팅INDXX",
         "yahoosymbol": "371450.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "371460",
         "name": "TIGER 차이나전기차SOLACTIVE",
         "yahoosymbol": "371460.KS",
         "ETF": "Y",
-        "sector": "자동차"
+        "sector": "기타"
       },
       {
         "code": "371470",
         "name": "TIGER 차이나바이오테크SOLACTIVE",
         "yahoosymbol": "371470.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "371870",
         "name": "ACE 차이나항셍테크",
         "yahoosymbol": "371870.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "372330",
         "name": "KODEX 차이나항셍테크",
         "yahoosymbol": "372330.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "372910",
@@ -11096,14 +11096,14 @@
         "name": "KIWOOM 미국방어배당성장나스닥",
         "yahoosymbol": "373790.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "375270",
         "name": "RISE 글로벌데이터센터리츠(합성)",
         "yahoosymbol": "375270.KS",
         "ETF": "Y",
-        "sector": "데이터센터"
+        "sector": "기타"
       },
       {
         "code": "375500",
@@ -11208,7 +11208,7 @@
         "name": "KODEX 미국나스닥100",
         "yahoosymbol": "379810.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "380340",
@@ -11222,14 +11222,14 @@
         "name": "TIGER 미국테크TOP10 INDXX",
         "yahoosymbol": "381170.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "381180",
         "name": "TIGER 미국필라델피아반도체나스닥",
         "yahoosymbol": "381180.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "381560",
@@ -11369,21 +11369,21 @@
         "name": "KODEX 미국반도체",
         "yahoosymbol": "390390.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "390400",
         "name": "KODEX 미국스마트모빌리티S&P",
         "yahoosymbol": "390400.KS",
         "ETF": "Y",
-        "sector": "자동차"
+        "sector": "기타"
       },
       {
         "code": "391600",
         "name": "ACE 미국친환경그린테마",
         "yahoosymbol": "391600.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "391670",
@@ -11397,14 +11397,14 @@
         "name": "TIGER 글로벌자율주행&전기차SOLACTIVE",
         "yahoosymbol": "394660.KS",
         "ETF": "Y",
-        "sector": "자동차"
+        "sector": "기타"
       },
       {
         "code": "394670",
         "name": "TIGER 글로벌리튬&2차전지SOLACTIVE(합성)",
         "yahoosymbol": "394670.KS",
         "ETF": "Y",
-        "sector": "2차전지"
+        "sector": "기타"
       },
       {
         "code": "395150",
@@ -11481,14 +11481,14 @@
         "name": "TIGER 차이나클린에너지SOLACTIVE",
         "yahoosymbol": "396510.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "396520",
         "name": "TIGER 차이나반도체FACTSET",
         "yahoosymbol": "396520.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "396690",
@@ -11509,28 +11509,28 @@
         "name": "RISE 글로벌클린에너지",
         "yahoosymbol": "399580.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "400570",
         "name": "KODEX 유럽탄소배출권선물ICE(H)",
         "yahoosymbol": "400570.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "400580",
         "name": "SOL 유럽탄소배출권선물S&P(H)",
         "yahoosymbol": "400580.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "400590",
         "name": "SOL 글로벌탄소배출권선물ICE(합성)",
         "yahoosymbol": "400590.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "400760",
@@ -11565,7 +11565,7 @@
         "name": "HANARO 글로벌탄소배출권선물ICE(합성)",
         "yahoosymbol": "401590.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "402340",
@@ -11586,7 +11586,7 @@
         "name": "ACE 미국배당다우존스",
         "yahoosymbol": "402970.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "403550",
@@ -11663,21 +11663,21 @@
         "name": "에셋플러스 글로벌플랫폼액티브",
         "yahoosymbol": "407830.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "409810",
         "name": "KODEX 미국나스닥100선물인버스(H)",
         "yahoosymbol": "409810.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "409820",
         "name": "KODEX 미국나스닥100레버리지(합성 H)",
         "yahoosymbol": "409820.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "410870",
@@ -11698,7 +11698,7 @@
         "name": "KODEX 미국나스닥AI테크액티브",
         "yahoosymbol": "411420.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "411540",
@@ -11733,14 +11733,14 @@
         "name": "TIGER 글로벌AI플랫폼액티브",
         "yahoosymbol": "412770.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "413220",
         "name": "SOL 차이나태양광CSI(합성)",
         "yahoosymbol": "413220.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "413930",
@@ -11754,7 +11754,7 @@
         "name": "ACE 글로벌자율주행액티브",
         "yahoosymbol": "414270.KS",
         "ETF": "Y",
-        "sector": "자동차"
+        "sector": "기타"
       },
       {
         "code": "414780",
@@ -11789,7 +11789,7 @@
         "name": "PLUS 글로벌희토류&전략자원생산기업",
         "yahoosymbol": "415920.KS",
         "ETF": "Y",
-        "sector": "화학/소재"
+        "sector": "기타"
       },
       {
         "code": "416090",
@@ -11810,7 +11810,7 @@
         "name": "RISE 글로벌수소경제",
         "yahoosymbol": "417450.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "417630",
@@ -11824,35 +11824,35 @@
         "name": "TIGER 미국나스닥100레버리지(합성)",
         "yahoosymbol": "418660.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "418670",
         "name": "TIGER 글로벌AI사이버보안",
         "yahoosymbol": "418670.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "419420",
         "name": "KODEX 미국클린에너지나스닥",
         "yahoosymbol": "419420.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "419430",
         "name": "KODEX 차이나2차전지MSCI(합성)",
         "yahoosymbol": "419430.KS",
         "ETF": "Y",
-        "sector": "2차전지"
+        "sector": "기타"
       },
       {
         "code": "419650",
         "name": "PLUS 글로벌수소&차세대연료전지",
         "yahoosymbol": "419650.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "419890",
@@ -11887,14 +11887,14 @@
         "name": "SOL 글로벌AI반도체탑픽액티브",
         "yahoosymbol": "423170.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "423920",
         "name": "TIGER 미국필라델피아반도체레버리지(합성)",
         "yahoosymbol": "423920.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "426020",
@@ -11908,7 +11908,7 @@
         "name": "TIME 미국나스닥100액티브",
         "yahoosymbol": "426030.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "426150",
@@ -11929,7 +11929,7 @@
         "name": "KODEX 차이나AI테크액티브",
         "yahoosymbol": "428510.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "428560",
@@ -11943,14 +11943,14 @@
         "name": "TIGER 미국S&P500배당귀족",
         "yahoosymbol": "429000.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "429010",
         "name": "TIGER 미국나스닥넥스트100",
         "yahoosymbol": "429010.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "429740",
@@ -12006,7 +12006,7 @@
         "name": "에셋플러스 글로벌대장장이액티브",
         "yahoosymbol": "433220.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "433250",
@@ -12083,7 +12083,7 @@
         "name": "TIGER 미국나스닥100채권혼합50",
         "yahoosymbol": "435420.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "435530",
@@ -12153,14 +12153,14 @@
         "name": "ACE 미국나스닥100미국채혼합50액티브",
         "yahoosymbol": "438100.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "438320",
         "name": "TIGER 차이나항셍테크레버리지(합성 H)",
         "yahoosymbol": "438320.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "438330",
@@ -12244,7 +12244,7 @@
         "name": "WON 미국우주항공방산",
         "yahoosymbol": "440910.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "441540",
@@ -12258,14 +12258,14 @@
         "name": "KODEX 미국배당커버드콜액티브",
         "yahoosymbol": "441640.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "441680",
         "name": "TIGER 미국나스닥100커버드콜(합성)",
         "yahoosymbol": "441680.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "441800",
@@ -12293,7 +12293,7 @@
         "name": "RISE 글로벌원자력",
         "yahoosymbol": "442320.KS",
         "ETF": "Y",
-        "sector": "원자력"
+        "sector": "기타"
       },
       {
         "code": "442550",
@@ -12321,7 +12321,7 @@
         "name": "PLUS 글로벌HBM반도체",
         "yahoosymbol": "442580.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "443060",
@@ -12384,7 +12384,7 @@
         "name": "KODEX 아시아AI반도체exChina액티브",
         "yahoosymbol": "446690.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "446700",
@@ -12398,14 +12398,14 @@
         "name": "SOL 미국배당다우존스",
         "yahoosymbol": "446720.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "446770",
         "name": "ACE 글로벌반도체TOP4 Plus",
         "yahoosymbol": "446770.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "447430",
@@ -12454,7 +12454,7 @@
         "name": "TIGER 미국나스닥100(H)",
         "yahoosymbol": "448300.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "448330",
@@ -12475,7 +12475,7 @@
         "name": "ACE 엔비디아채권혼합",
         "yahoosymbol": "448540.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "448570",
@@ -12517,7 +12517,7 @@
         "name": "KODEX 미국나스닥100(H)",
         "yahoosymbol": "449190.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "449450",
@@ -12671,7 +12671,7 @@
         "name": "SOL 미국배당다우존스(H)",
         "yahoosymbol": "452360.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "453010",
@@ -12692,7 +12692,7 @@
         "name": "KIWOOM 미국나스닥100(H)",
         "yahoosymbol": "453080.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "453330",
@@ -12713,28 +12713,28 @@
         "name": "KODEX 미국S&P500필수소비재",
         "yahoosymbol": "453630.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "453640",
         "name": "KODEX 미국S&P500헬스케어",
         "yahoosymbol": "453640.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "453650",
         "name": "KODEX 미국S&P500금융",
         "yahoosymbol": "453650.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "453660",
         "name": "KODEX 미국S&P500경기소비재",
         "yahoosymbol": "453660.KS",
         "ETF": "Y",
-        "sector": "소비재"
+        "sector": "기타"
       },
       {
         "code": "453810",
@@ -12769,14 +12769,14 @@
         "name": "TIGER TSMC파운드리밸류체인",
         "yahoosymbol": "453950.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "454180",
         "name": "KIWOOM 차이나내수소비TOP CSI",
         "yahoosymbol": "454180.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "454320",
@@ -12867,7 +12867,7 @@
         "name": "TIME 글로벌AI인공지능액티브",
         "yahoosymbol": "456600.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "456610",
@@ -12881,7 +12881,7 @@
         "name": "TIGER 차이나전기차레버리지(합성)",
         "yahoosymbol": "456680.KS",
         "ETF": "Y",
-        "sector": "자동차"
+        "sector": "기타"
       },
       {
         "code": "456880",
@@ -12965,21 +12965,21 @@
         "name": "TIGER 미국배당다우존스",
         "yahoosymbol": "458730.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "458750",
         "name": "TIGER 미국배당다우존스타겟커버드콜1호",
         "yahoosymbol": "458750.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "458760",
         "name": "TIGER 미국배당다우존스타겟커버드콜2호",
         "yahoosymbol": "458760.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "459560",
@@ -13021,7 +13021,7 @@
         "name": "RISE 미국S&P배당킹",
         "yahoosymbol": "460660.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "460850",
@@ -13049,7 +13049,7 @@
         "name": "HANARO 글로벌생성형AI액티브",
         "yahoosymbol": "461340.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "461450",
@@ -13098,14 +13098,14 @@
         "name": "PLUS 미국테크TOP10",
         "yahoosymbol": "461900.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "461910",
         "name": "PLUS 미국테크TOP10레버리지(합성)",
         "yahoosymbol": "461910.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "461950",
@@ -13196,7 +13196,7 @@
         "name": "KODEX 미국S&P500테크놀로지",
         "yahoosymbol": "463680.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "463690",
@@ -13217,7 +13217,7 @@
         "name": "TIGER 글로벌AI&로보틱스 INDXX",
         "yahoosymbol": "464310.KS",
         "ETF": "Y",
-        "sector": "기계"
+        "sector": "기타"
       },
       {
         "code": "464470",
@@ -13245,7 +13245,7 @@
         "name": "PLUS 일본반도체소부장",
         "yahoosymbol": "464920.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "464930",
@@ -13273,28 +13273,28 @@
         "name": "ACE 미국빅테크TOP7 Plus",
         "yahoosymbol": "465580.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "465610",
         "name": "ACE 미국빅테크TOP7 Plus레버리지(합성)",
         "yahoosymbol": "465610.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "465620",
         "name": "ACE 미국빅테크TOP7 Plus인버스(합성)",
         "yahoosymbol": "465620.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "465660",
         "name": "TIGER 일본반도체FACTSET",
         "yahoosymbol": "465660.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "465670",
@@ -13350,7 +13350,7 @@
         "name": "TIGER 글로벌AI액티브",
         "yahoosymbol": "466950.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "468370",
@@ -13378,14 +13378,14 @@
         "name": "RISE 미국반도체NYSE(H)",
         "yahoosymbol": "469050.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "469060",
         "name": "RISE 미국반도체NYSE",
         "yahoosymbol": "469060.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "469070",
@@ -13406,7 +13406,7 @@
         "name": "ACE 일본반도체",
         "yahoosymbol": "469160.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "469170",
@@ -13448,7 +13448,7 @@
         "name": "KoAct 글로벌AI&로봇액티브",
         "yahoosymbol": "471040.KS",
         "ETF": "Y",
-        "sector": "기계"
+        "sector": "기타"
       },
       {
         "code": "471230",
@@ -13497,14 +13497,14 @@
         "name": "TIGER 미국테크TOP10 INDXX(H)",
         "yahoosymbol": "472160.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "472170",
         "name": "TIGER 미국테크TOP10채권혼합",
         "yahoosymbol": "472170.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "472720",
@@ -13574,7 +13574,7 @@
         "name": "KIWOOM 글로벌AI반도체",
         "yahoosymbol": "473490.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "473590",
@@ -13595,7 +13595,7 @@
         "name": "TIGER 미국테크TOP10타겟커버드콜",
         "yahoosymbol": "474220.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "474390",
@@ -13616,14 +13616,14 @@
         "name": "KIWOOM 미국원유에너지기업",
         "yahoosymbol": "474800.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "474920",
         "name": "에셋플러스 차이나일등기업포커스10액티브",
         "yahoosymbol": "474920.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "475050",
@@ -13637,7 +13637,7 @@
         "name": "KoAct 글로벌친환경전력인프라액티브",
         "yahoosymbol": "475070.KS",
         "ETF": "Y",
-        "sector": "전력"
+        "sector": "기타"
       },
       {
         "code": "475080",
@@ -13735,14 +13735,14 @@
         "name": "SOL 미국나스닥100",
         "yahoosymbol": "476030.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "476070",
         "name": "KODEX 글로벌비만치료제TOP2 Plus",
         "yahoosymbol": "476070.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "476260",
@@ -13777,7 +13777,7 @@
         "name": "TIGER 글로벌비만치료제TOP2Plus",
         "yahoosymbol": "476690.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "476750",
@@ -13833,14 +13833,14 @@
         "name": "KODEX 인도타타그룹",
         "yahoosymbol": "477730.KS",
         "ETF": "Y",
-        "sector": "지주사"
+        "sector": "기타"
       },
       {
         "code": "478150",
         "name": "TIME 글로벌우주테크&방산액티브",
         "yahoosymbol": "478150.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "479080",
@@ -13861,7 +13861,7 @@
         "name": "SOL 미국AI반도체칩메이커",
         "yahoosymbol": "479620.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "479730",
@@ -13882,7 +13882,7 @@
         "name": "ACE 미국빅테크7+데일리타겟커버드콜(합성)",
         "yahoosymbol": "480020.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "480030",
@@ -13896,7 +13896,7 @@
         "name": "ACE 미국반도체데일리타겟커버드콜(합성)",
         "yahoosymbol": "480040.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "480260",
@@ -13910,7 +13910,7 @@
         "name": "TIGER 글로벌온디바이스AI",
         "yahoosymbol": "480310.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "480370",
@@ -13945,14 +13945,14 @@
         "name": "SOL 미국AI소프트웨어",
         "yahoosymbol": "481180.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "481190",
         "name": "SOL 미국테크TOP10",
         "yahoosymbol": "481190.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "481340",
@@ -14001,28 +14001,28 @@
         "name": "KIWOOM 미국블록버스터바이오테크의약품+",
         "yahoosymbol": "483030.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "483280",
         "name": "KODEX 미국AI테크TOP10타겟커버드콜",
         "yahoosymbol": "483280.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "483290",
         "name": "KODEX 미국배당다우존스타겟커버드콜",
         "yahoosymbol": "483290.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "483320",
         "name": "ACE 엔비디아밸류체인액티브",
         "yahoosymbol": "483320.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "483330",
@@ -14085,21 +14085,21 @@
         "name": "KODEX 미국AI테크TOP10",
         "yahoosymbol": "485540.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "485690",
         "name": "RISE 미국AI밸류체인TOP3Plus",
         "yahoosymbol": "485690.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "485810",
         "name": "TIME 글로벌바이오액티브",
         "yahoosymbol": "485810.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "486240",
@@ -14113,14 +14113,14 @@
         "name": "TIGER 미국나스닥100타겟데일리커버드콜",
         "yahoosymbol": "486290.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "486450",
         "name": "SOL 미국AI전력인프라",
         "yahoosymbol": "486450.KS",
         "ETF": "Y",
-        "sector": "전력"
+        "sector": "기타"
       },
       {
         "code": "486830",
@@ -14141,7 +14141,7 @@
         "name": "KODEX 미국AI전력핵심인프라",
         "yahoosymbol": "487230.KS",
         "ETF": "Y",
-        "sector": "전력"
+        "sector": "기타"
       },
       {
         "code": "487240",
@@ -14183,14 +14183,14 @@
         "name": "ACE 인도시장대표BIG5그룹액티브",
         "yahoosymbol": "487920.KS",
         "ETF": "Y",
-        "sector": "지주사"
+        "sector": "기타"
       },
       {
         "code": "487950",
         "name": "KODEX 대만테크고배당다우존스",
         "yahoosymbol": "487950.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "488080",
@@ -14218,7 +14218,7 @@
         "name": "MIDAS 일본테크액티브",
         "yahoosymbol": "488290.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "488480",
@@ -14274,7 +14274,7 @@
         "name": "KODEX 미국배당다우존스",
         "yahoosymbol": "489250.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "489290",
@@ -14295,21 +14295,21 @@
         "name": "KIWOOM 글로벌전력GRID인프라",
         "yahoosymbol": "489860.KS",
         "ETF": "Y",
-        "sector": "전력"
+        "sector": "기타"
       },
       {
         "code": "490090",
         "name": "TIGER 미국AI빅테크10",
         "yahoosymbol": "490090.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "490330",
         "name": "KoAct 미국치매&뇌질환치료제액티브",
         "yahoosymbol": "490330.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "기타"
       },
       {
         "code": "490480",
@@ -14323,35 +14323,35 @@
         "name": "SOL 미국배당미국채혼합50",
         "yahoosymbol": "490490.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "490590",
         "name": "RISE 미국AI밸류체인데일리고정커버드콜",
         "yahoosymbol": "490590.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "490600",
         "name": "RISE 미국배당100데일리고정커버드콜",
         "yahoosymbol": "490600.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "491010",
         "name": "TIGER 글로벌AI전력인프라액티브",
         "yahoosymbol": "491010.KS",
         "ETF": "Y",
-        "sector": "전력"
+        "sector": "기타"
       },
       {
         "code": "491090",
         "name": "KODEX 미국테크TOP3플러스",
         "yahoosymbol": "491090.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "491220",
@@ -14386,14 +14386,14 @@
         "name": "RISE 미국테크100데일리고정커버드콜",
         "yahoosymbol": "491620.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "491630",
         "name": "RISE 미국반도체인버스(합성 H)",
         "yahoosymbol": "491630.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "491700",
@@ -14414,7 +14414,7 @@
         "name": "TIGER 미국AI반도체팹리스",
         "yahoosymbol": "491830.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "492500",
@@ -14428,14 +14428,14 @@
         "name": "SOL 미국배당다우존스2호",
         "yahoosymbol": "493420.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "493810",
         "name": "TIGER 미국AI빅테크10타겟데일리커버드콜",
         "yahoosymbol": "493810.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "494180",
@@ -14463,7 +14463,7 @@
         "name": "KODEX 미국나스닥100데일리커버드콜OTM",
         "yahoosymbol": "494300.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "494310",
@@ -14484,7 +14484,7 @@
         "name": "ACE 글로벌AI맞춤형반도체",
         "yahoosymbol": "494340.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "494410",
@@ -14498,7 +14498,7 @@
         "name": "PLUS 미국배당증가성장주데일리커버드콜",
         "yahoosymbol": "494420.KS",
         "ETF": "Y",
-        "sector": "금융"
+        "sector": "기타"
       },
       {
         "code": "494670",
@@ -14512,7 +14512,7 @@
         "name": "TIGER 미국방산TOP10",
         "yahoosymbol": "494840.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "494890",
@@ -14582,7 +14582,7 @@
         "name": "RISE 미국AI테크액티브",
         "yahoosymbol": "495940.KS",
         "ETF": "Y",
-        "sector": "IT/플랫폼"
+        "sector": "기타"
       },
       {
         "code": "496020",
@@ -14624,7 +14624,7 @@
         "name": "PLUS 글로벌방산",
         "yahoosymbol": "496770.KS",
         "ETF": "Y",
-        "sector": "방산"
+        "sector": "기타"
       },
       {
         "code": "497510",
@@ -14645,14 +14645,14 @@
         "name": "TIGER 미국필라델피아AI반도체나스닥",
         "yahoosymbol": "497570.KS",
         "ETF": "Y",
-        "sector": "반도체"
+        "sector": "기타"
       },
       {
         "code": "497780",
         "name": "KoAct 미국천연가스인프라액티브",
         "yahoosymbol": "497780.KS",
         "ETF": "Y",
-        "sector": "에너지"
+        "sector": "기타"
       },
       {
         "code": "497880",

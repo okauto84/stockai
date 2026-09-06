@@ -126,6 +126,109 @@ def merge_with_etf_listing(
     return merged.sort_values(["Market", "Code"]).reset_index(drop=True)
 
 
+def is_korea_related_etf(name: str) -> bool:
+    """한국(Korea) 관련 ETF 여부 판별"""
+    name_upper = name.upper()
+
+    korea_keywords = [
+        "코리아",
+        "한국",
+        "KOREA",
+        "KRX",
+        "KOSPI",
+        "KOSDAQ",
+        "K방산",
+        "K-방산",
+        "K-컬처",
+        "K컬처",
+        "KPOP",
+        "K-POP",
+        "삼성",
+        "현대차",
+        "현대",
+        "SK하이닉스",
+        "하이닉스",
+        "네이버",
+        "카카오",
+        "한화",
+        "LG에너지",
+        "LG화학",
+        "기아",
+        "포스코",
+        "셀트리온",
+        "대한전선",
+        "일진전기",
+    ]
+    overseas_keywords = [
+        "미국",
+        "중국",
+        "일본",
+        "유럽",
+        "글로벌",
+        "월드",
+        "WORLD",
+        "GLOBAL",
+        "나스닥",
+        "NASDAQ",
+        "S&P",
+        "SP500",
+        "S&P500",
+        "필라델피아",
+        "인도",
+        "대만",
+        "베트남",
+        "브라질",
+        "신흥",
+        "MSCI",
+        "차이나",
+        "CHINA",
+        "홍콩",
+        "HONGKONG",
+        "TAIWAN",
+        "JAPAN",
+        "EUROPE",
+        "INDIA",
+        "엔비디아",
+        "NVIDIA",
+        "테슬라",
+        "TESLA",
+        "애플",
+        "APPLE",
+        "아마존",
+        "AMAZON",
+        "구글",
+        "GOOGLE",
+        "메타플랫폼",
+        "마이크로소프트",
+        "MICROSOFT",
+        "브로드컴",
+        "BROADCOM",
+        "팔란티어",
+        "PALANTIR",
+        "BYD",
+        "TSMC",
+        "달러",
+        "엔화",
+        "QQQ",
+        "SOXX",
+        "다우존스",
+        "DOW",
+        "러셀",
+        "RUSSELL",
+    ]
+
+    has_korea = any(keyword.upper() in name_upper for keyword in korea_keywords)
+    if has_korea:
+        return True
+
+    has_overseas = any(keyword.upper() in name_upper for keyword in overseas_keywords)
+    if has_overseas:
+        return False
+
+    # 해외 표기가 없으면 국내 테마 ETF로 간주
+    return True
+
+
 def get_accurate_sector(code: str, name: str) -> str:
     """ETF 종목코드·종목명 기반 섹터 분류"""
     # 1. [전문가 매핑] PDF(자산구성내역) 분석 기반 하드코딩
@@ -154,137 +257,153 @@ def get_accurate_sector(code: str, name: str) -> str:
     }
 
     if code in expert_mapping:
-        return expert_mapping[code]
+        sector = expert_mapping[code]
+    else:
+        name_upper = name.upper()
 
-    name_upper = name.upper()
+        # 2. [세분화된 주도 테마 우선 추출] (조건문 순서 엄수)
+        if any(k in name_upper for k in ["휴머노이드"]):
+            sector = "휴머노이드"
+        elif any(k in name_upper for k in ["데이터센터", "DATACENTER"]):
+            sector = "데이터센터"
+        elif any(k in name_upper for k in ["광통신"]):
+            sector = "광통신"
+        elif any(k in name_upper for k in ["원자력", "SMR"]):
+            sector = "원자력"
+        elif any(k in name_upper for k in ["화장품", "뷰티", "COSMETIC", "BEAUTY"]):
+            sector = "화장품"
+        elif any(k in name_upper for k in ["전선"]):
+            sector = "전선"
+        # 3. [기존 16대 섹터 정밀 분류]
+        elif any(
+            k in name_upper
+            for k in ["방산", "국방", "우주", "위성", "AEROSPACE", "DEFENSE"]
+        ):
+            sector = "방산"
+        elif any(
+            k in name_upper
+            for k in [
+                "반도체",
+                "엔비디아",
+                "TSMC",
+                "필라델피아",
+                "HBM",
+                "팹리스",
+                "파운드리",
+                "ASIC",
+                "CHIP",
+            ]
+        ):
+            sector = "반도체"
+        elif any(
+            k in name_upper
+            for k in ["2차전지", "2차 전지", "배터리", "전고체", "음극재", "양극재", "리튬"]
+        ):
+            sector = "2차전지"
+        elif any(k in name_upper for k in ["전력", "그리드", "GRID", "변압기", "ESS"]):
+            sector = "전력"
+        elif any(
+            k in name_upper
+            for k in [
+                "에너지",
+                "태양광",
+                "수소",
+                "원유",
+                "천연가스",
+                "클린",
+                "친환경",
+                "탄소",
+                "기후",
+            ]
+        ):
+            sector = "에너지"
+        elif any(k in name_upper for k in ["인프라", "통신", "NETWORK", "네트워크"]):
+            sector = "인프라"
+        elif any(k in name_upper for k in ["기계", "로봇", "로보틱스", "자동화", "장비"]):
+            sector = "기계"  # 휴머노이드는 위에서 먼저 걸러짐
+        elif any(
+            k in name_upper
+            for k in [
+                "바이오",
+                "의료",
+                "헬스케어",
+                "치료제",
+                "신약",
+                "메디컬",
+                "제약",
+                "건강",
+                "CDMO",
+            ]
+        ):
+            sector = "바이오"
+        elif any(
+            k in name_upper
+            for k in [
+                "IT",
+                "소프트웨어",
+                "플랫폼",
+                "메타버스",
+                "AI",
+                "클라우드",
+                "게임",
+                "인터넷",
+                "나스닥",
+                "테크",
+                "빅테크",
+                "사이버보안",
+                "웹툰",
+            ]
+        ):
+            sector = "IT/플랫폼"
+        elif any(
+            k in name_upper
+            for k in ["금융", "은행", "증권", "보험", "리츠", "REITS", "부동산", "배당"]
+        ):
+            sector = "금융"
+        elif any(
+            k in name_upper
+            for k in [
+                "화학",
+                "소재",
+                "희토류",
+                "철강",
+                "비철금속",
+                "금선물",
+                "은선물",
+                "구리",
+                "팔라듐",
+                "농산물",
+                "콩",
+            ]
+        ):
+            sector = "화학/소재"
+        elif any(
+            k in name_upper
+            for k in ["소비재", "여행", "레저", "푸드", "의류", "내수", "럭셔리"]
+        ):
+            sector = "소비재"  # 화장품은 위에서 먼저 걸러짐
+        elif any(
+            k in name_upper
+            for k in ["자동차", "모빌리티", "자율주행", "전기차", "스마트카", "운송"]
+        ):
+            sector = "자동차"
+        elif any(
+            k in name_upper
+            for k in ["K-컬처", "KPOP", "미디어", "엔터", "콘텐츠", "드라마"]
+        ):
+            sector = "K-컬처"
+        elif any(k in name_upper for k in ["조선", "해운", "선박", "SHIPBUILDING"]):
+            sector = "조선/해운"
+        elif any(k in name_upper for k in ["지주사", "그룹", "기업지배구조", "탑픽"]):
+            sector = "지주사"
+        else:
+            # 4. 범용 지수 및 채권 파생상품은 기타 처리
+            sector = "기타"
 
-    # 2. [세분화된 주도 테마 우선 추출] (조건문 순서 엄수)
-    if any(k in name_upper for k in ["휴머노이드"]):
-        return "휴머노이드"
-    if any(k in name_upper for k in ["데이터센터", "DATACENTER"]):
-        return "데이터센터"
-    if any(k in name_upper for k in ["광통신"]):
-        return "광통신"
-    if any(k in name_upper for k in ["원자력", "SMR"]):
-        return "원자력"
-    if any(k in name_upper for k in ["화장품", "뷰티", "COSMETIC", "BEAUTY"]):
-        return "화장품"
-    if any(k in name_upper for k in ["전선"]):
-        return "전선"
-
-    # 3. [기존 16대 섹터 정밀 분류]
-    if any(
-        k in name_upper
-        for k in ["방산", "국방", "우주", "위성", "AEROSPACE", "DEFENSE"]
-    ):
-        return "방산"
-    if any(
-        k in name_upper
-        for k in [
-            "반도체",
-            "엔비디아",
-            "TSMC",
-            "필라델피아",
-            "HBM",
-            "팹리스",
-            "파운드리",
-            "ASIC",
-            "CHIP",
-        ]
-    ):
-        return "반도체"
-    if any(
-        k in name_upper
-        for k in ["2차전지", "2차 전지", "배터리", "전고체", "음극재", "양극재", "리튬"]
-    ):
-        return "2차전지"
-    if any(k in name_upper for k in ["전력", "그리드", "GRID", "변압기", "ESS"]):
-        return "전력"
-    if any(
-        k in name_upper
-        for k in ["에너지", "태양광", "수소", "원유", "천연가스", "클린", "친환경", "탄소", "기후"]
-    ):
-        return "에너지"
-    if any(k in name_upper for k in ["인프라", "통신", "NETWORK", "네트워크"]):
-        return "인프라"
-    if any(k in name_upper for k in ["기계", "로봇", "로보틱스", "자동화", "장비"]):
-        return "기계"  # 휴머노이드는 위에서 먼저 걸러짐
-    if any(
-        k in name_upper
-        for k in [
-            "바이오",
-            "의료",
-            "헬스케어",
-            "치료제",
-            "신약",
-            "메디컬",
-            "제약",
-            "건강",
-            "CDMO",
-        ]
-    ):
-        return "바이오"
-    if any(
-        k in name_upper
-        for k in [
-            "IT",
-            "소프트웨어",
-            "플랫폼",
-            "메타버스",
-            "AI",
-            "클라우드",
-            "게임",
-            "인터넷",
-            "나스닥",
-            "테크",
-            "빅테크",
-            "사이버보안",
-            "웹툰",
-        ]
-    ):
-        return "IT/플랫폼"
-    if any(
-        k in name_upper
-        for k in ["금융", "은행", "증권", "보험", "리츠", "REITS", "부동산", "배당"]
-    ):
-        return "금융"
-    if any(
-        k in name_upper
-        for k in [
-            "화학",
-            "소재",
-            "희토류",
-            "철강",
-            "비철금속",
-            "금선물",
-            "은선물",
-            "구리",
-            "팔라듐",
-            "농산물",
-            "콩",
-        ]
-    ):
-        return "화학/소재"
-    if any(
-        k in name_upper for k in ["소비재", "여행", "레저", "푸드", "의류", "내수", "럭셔리"]
-    ):
-        return "소비재"  # 화장품은 위에서 먼저 걸러짐
-    if any(
-        k in name_upper
-        for k in ["자동차", "모빌리티", "자율주행", "전기차", "스마트카", "운송"]
-    ):
-        return "자동차"
-    if any(
-        k in name_upper for k in ["K-컬처", "KPOP", "미디어", "엔터", "콘텐츠", "드라마"]
-    ):
-        return "K-컬처"
-    if any(k in name_upper for k in ["조선", "해운", "선박", "SHIPBUILDING"]):
-        return "조선/해운"
-    if any(k in name_upper for k in ["지주사", "그룹", "기업지배구조", "탑픽"]):
-        return "지주사"
-
-    # 4. 범용 지수 및 채권 파생상품은 기타 처리
-    return "기타"
+    # 한국과 관련 없는 해외 ETF는 기타로 편입
+    if sector != "기타" and not is_korea_related_etf(name):
+        return "기타"
+    return sector
 
 
 def build_market_records(df: pd.DataFrame, market: str) -> list[dict]:
