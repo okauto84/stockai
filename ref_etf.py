@@ -45,10 +45,16 @@ def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     ]
     sector_df = pd.DataFrame(count_rows)
 
-    etf_map = {
-        sector: pd.DataFrame(etfs).sort_values(["종목코드"]).reset_index(drop=True)
-        for sector, etfs in sector_etfs.items()
-    }
+    etf_map: dict[str, pd.DataFrame] = {}
+    for sector, etfs in sector_etfs.items():
+        etf_df = pd.DataFrame(etfs)
+        if etf_df.empty:
+            etf_map[sector] = etf_df
+            continue
+        sort_cols = [col for col in ("종목코드", "종목명") if col in etf_df.columns]
+        if sort_cols:
+            etf_df = etf_df.sort_values(sort_cols)
+        etf_map[sector] = etf_df.reset_index(drop=True)
     return sector_df, etf_map
 
 
@@ -81,12 +87,26 @@ def build_sector_grid_rows(
 
 def _toggle_sector_selection(row_idx: int, side: str, sector: str) -> None:
     """같은 섹터를 다시 클릭하면 접고, 아니면 해당 섹터를 펼침"""
-    current = st.session_state.get("etf_sector_expand")
-    selected = {"row": row_idx, "side": side, "sector": sector}
-    if current == selected:
+    selected = f"{row_idx}|{side}|{sector}"
+    if st.session_state.get("etf_sector_expand") == selected:
         st.session_state["etf_sector_expand"] = None
     else:
         st.session_state["etf_sector_expand"] = selected
+
+
+def _parse_sector_selection() -> tuple[int, str, str] | None:
+    """펼침 상태 문자열을 (행, 좌우, 섹터)로 파싱"""
+    selected = st.session_state.get("etf_sector_expand")
+    if not selected or not isinstance(selected, str):
+        return None
+    parts = selected.split("|", 2)
+    if len(parts) != 3:
+        return None
+    try:
+        row_idx = int(parts[0])
+    except ValueError:
+        return None
+    return row_idx, parts[1], parts[2]
 
 
 def render_etf_list_expander(sector: str, etf_map: dict[str, pd.DataFrame]) -> None:
@@ -177,9 +197,9 @@ def render_sector_count_grid() -> None:
                     unsafe_allow_html=True,
                 )
 
-        selected = st.session_state.get("etf_sector_expand")
-        if selected and selected.get("row") == idx:
-            render_etf_list_expander(selected["sector"], etf_map)
+        selected = _parse_sector_selection()
+        if selected and selected[0] == idx:
+            render_etf_list_expander(selected[2], etf_map)
 
 
 def render_page() -> None:

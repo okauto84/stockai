@@ -1,10 +1,7 @@
 import streamlit as st
 
-import ref_etf
-import ref_stockanly
-
 PAGE_ETF = "ETF 추세확인"
-PAGE_STOCK = "종목분석"
+PAGE_STOCK = "개별 종목 분석"
 PAGE_OPTIONS = [PAGE_ETF, PAGE_STOCK]
 
 
@@ -93,7 +90,7 @@ def inject_styles() -> None:
 
 def render_top_bar() -> str:
     """상단 top-bar 탭 메뉴를 렌더하고 선택된 페이지명을 반환"""
-    if "nav_page" not in st.session_state:
+    if st.session_state.get("nav_page") not in PAGE_OPTIONS:
         st.session_state["nav_page"] = PAGE_ETF
 
     brand_col, tab_col = st.columns([1.2, 6])
@@ -117,6 +114,11 @@ def main() -> None:
         layout="wide",
         initial_sidebar_state="collapsed",
     )
+
+    # set_page_config 이후에 페이지 모듈을 불러와 Streamlit 초기화 충돌을 피함
+    import ref_etf
+    import ref_stockanly
+
     inject_styles()
 
     if "symbol" not in st.session_state:
