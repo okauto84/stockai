@@ -11,88 +11,108 @@ import streamlit as st
 KOSPI_LIST_FILE = (
     Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
 )
-
-# st.dataframe은 중복 컬럼명을 허용하지 않으므로, 표시는 동일하게 보이도록 ZWSP 사용
-COL_SECTOR_L = "섹터"
-COL_COUNT_L = "수"
-COL_SECTOR_R = "섹터\u200b"
-COL_COUNT_R = "수\u200b"
+MAX_GRID_ROWS = 12
+ETF_LIST_VISIBLE_ROWS = 8
 
 
 @st.cache_data
-def load_etf_sector_counts() -> pd.DataFrame:
-    """kospilist.json에서 ETF 섹터별 종목 수 집계"""
+def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    """kospilist.json에서 ETF 섹터 집계 및 섹터별 종목 목록 로드"""
     with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
         payload = json.load(file)
 
-    counts: dict[str, int] = {}
-    for items in payload.get("markets", {}).values():
+    sector_etfs: dict[str, list[dict]] = {}
+    for market, items in payload.get("markets", {}).items():
         for item in items:
             if item.get("ETF") != "Y":
                 continue
             sector = (item.get("sector") or "").strip() or "기타"
-            counts[sector] = counts.get(sector, 0) + 1
+            sector_etfs.setdefault(sector, []).append(
+                {
+                    "시장": market,
+                    "종목코드": item.get("code", ""),
+                    "종목명": item.get("name", ""),
+                    "야후심볼": item.get("yahoosymbol", ""),
+                }
+            )
 
-    rows = [
-        {"섹터": sector, "수": count}
-        for sector, count in sorted(
-            counts.items(),
-            key=lambda item: (-item[1], item[0]),
+    count_rows = [
+        {"섹터": sector, "수": len(etfs)}
+        for sector, etfs in sorted(
+            sector_etfs.items(),
+            key=lambda item: (-len(item[1]), item[0]),
         )
     ]
-    return pd.DataFrame(rows)
+    sector_df = pd.DataFrame(count_rows)
+
+    etf_map = {
+        sector: pd.DataFrame(etfs).sort_values(["종목코드"]).reset_index(drop=True)
+        for sector, etfs in sector_etfs.items()
+    }
+    return sector_df, etf_map
 
 
-def build_sector_count_grid(sector_df: pd.DataFrame) -> pd.DataFrame:
-    """섹터·수 목록을 4열(섹터|수|섹터|수) 그리드로 변환"""
+def build_sector_grid_rows(
+    sector_df: pd.DataFrame, max_rows: int = MAX_GRID_ROWS
+) -> list[dict]:
+    """섹터·수 목록을 최대 max_rows행의 좌·우 쌍으로 변환"""
     items = [
         (str(sector), int(count))
         for sector, count in sector_df.itertuples(index=False, name=None)
     ]
     left = items[0::2]
     right = items[1::2]
-    row_count = max(len(left), len(right))
+    row_count = min(max_rows, max(len(left), len(right), 0))
 
-    left_sectors: list[str] = []
-    left_counts: list[int | None] = []
-    right_sectors: list[str] = []
-    right_counts: list[int | None] = []
-
+    rows: list[dict] = []
     for idx in range(row_count):
-        if idx < len(left):
-            sector, count = left[idx]
-            left_sectors.append(sector)
-            left_counts.append(count)
-        else:
-            left_sectors.append("")
-            left_counts.append(None)
+        left_item = left[idx] if idx < len(left) else ("", None)
+        right_item = right[idx] if idx < len(right) else ("", None)
+        rows.append(
+            {
+                "left_sector": left_item[0],
+                "left_count": left_item[1],
+                "right_sector": right_item[0],
+                "right_count": right_item[1],
+            }
+        )
+    return rows
 
-        if idx < len(right):
-            sector, count = right[idx]
-            right_sectors.append(sector)
-            right_counts.append(count)
-        else:
-            right_sectors.append("")
-            right_counts.append(None)
 
-    return pd.DataFrame(
-        {
-            COL_SECTOR_L: left_sectors,
-            COL_COUNT_L: pd.Series(left_counts, dtype="Int64"),
-            COL_SECTOR_R: right_sectors,
-            COL_COUNT_R: pd.Series(right_counts, dtype="Int64"),
-        }
-    )
+def _toggle_sector_selection(row_idx: int, side: str, sector: str) -> None:
+    """같은 섹터를 다시 클릭하면 접고, 아니면 해당 섹터를 펼침"""
+    current = st.session_state.get("etf_sector_expand")
+    selected = {"row": row_idx, "side": side, "sector": sector}
+    if current == selected:
+        st.session_state["etf_sector_expand"] = None
+    else:
+        st.session_state["etf_sector_expand"] = selected
+
+
+def render_etf_list_expander(sector: str, etf_map: dict[str, pd.DataFrame]) -> None:
+    """선택한 섹터의 ETF 목록을 접이식으로 표시"""
+    etf_df = etf_map.get(sector, pd.DataFrame())
+    label = f"{sector} · ETF {len(etf_df):,}개"
+    with st.expander(label, expanded=True):
+        if etf_df.empty:
+            st.info("해당 섹터에 표시할 ETF가 없습니다.")
+            return
+        st.dataframe(
+            etf_df,
+            use_container_width=True,
+            hide_index=True,
+            height=35 * min(len(etf_df), ETF_LIST_VISIBLE_ROWS) + 38,
+        )
 
 
 def render_sector_count_grid() -> None:
-    """섹터별 ETF 종목 수 그리드 표시"""
+    """섹터별 ETF 종목 수 그리드 및 행별 ETF 목록 표시"""
     if not KOSPI_LIST_FILE.exists():
         st.warning(f"종목 목록 파일을 찾을 수 없습니다: {KOSPI_LIST_FILE}")
         return
 
     try:
-        sector_df = load_etf_sector_counts()
+        sector_df, etf_map = load_etf_sector_data()
     except json.JSONDecodeError:
         st.warning("종목 목록 JSON 파일 형식이 올바르지 않습니다.")
         return
@@ -104,28 +124,62 @@ def render_sector_count_grid() -> None:
         st.info("표시할 ETF 섹터 데이터가 없습니다.")
         return
 
-    try:
-        grid_df = build_sector_count_grid(sector_df)
-    except Exception as exc:
-        st.error(f"섹터 그리드 생성 중 오류: {exc}")
-        return
+    grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
+    if "etf_sector_expand" not in st.session_state:
+        st.session_state["etf_sector_expand"] = None
 
     total_etf = int(sector_df["수"].sum())
     st.caption(
-        f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · ETF {total_etf:,}개"
+        f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · "
+        f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행 · "
+        "섹터를 클릭하면 해당 ETF 목록을 펼칩니다"
     )
-    st.dataframe(
-        grid_df,
-        use_container_width=True,
-        hide_index=True,
-        height=35 * (len(grid_df) + 1) + 2,
-        column_config={
-            COL_SECTOR_L: st.column_config.TextColumn("섹터"),
-            COL_COUNT_L: st.column_config.NumberColumn("수", format="%d"),
-            COL_SECTOR_R: st.column_config.TextColumn("섹터"),
-            COL_COUNT_R: st.column_config.NumberColumn("수", format="%d"),
-        },
-    )
+
+    header = st.columns([3, 1, 3, 1], gap="small")
+    header[0].markdown("**섹터**")
+    header[1].markdown("**수**")
+    header[2].markdown("**섹터**")
+    header[3].markdown("**수**")
+
+    for idx, row in enumerate(grid_rows):
+        left_sector = row["left_sector"]
+        left_count = row["left_count"]
+        right_sector = row["right_sector"]
+        right_count = row["right_count"]
+
+        c1, c2, c3, c4 = st.columns([3, 1, 3, 1], gap="small")
+        with c1:
+            if left_sector:
+                if st.button(
+                    left_sector,
+                    key=f"etf_sector_left_{idx}",
+                    use_container_width=True,
+                ):
+                    _toggle_sector_selection(idx, "L", left_sector)
+        with c2:
+            if left_count is not None:
+                st.markdown(
+                    f"<div style='padding-top:0.45rem;'>{left_count}</div>",
+                    unsafe_allow_html=True,
+                )
+        with c3:
+            if right_sector:
+                if st.button(
+                    right_sector,
+                    key=f"etf_sector_right_{idx}",
+                    use_container_width=True,
+                ):
+                    _toggle_sector_selection(idx, "R", right_sector)
+        with c4:
+            if right_count is not None:
+                st.markdown(
+                    f"<div style='padding-top:0.45rem;'>{right_count}</div>",
+                    unsafe_allow_html=True,
+                )
+
+        selected = st.session_state.get("etf_sector_expand")
+        if selected and selected.get("row") == idx:
+            render_etf_list_expander(selected["sector"], etf_map)
 
 
 def render_page() -> None:
