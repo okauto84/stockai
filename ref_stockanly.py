@@ -1,3 +1,4 @@
+import html
 import json
 from pathlib import Path
 
@@ -775,7 +776,13 @@ def render_stock_detail(data: dict) -> None:
     change = data["change_pct"]
     change_label = f"{change:+.2f}%"
 
-    st.subheader(f"{data['name']} ({data['symbol']})")
+    st.markdown(
+        f"<div style='font-size:14px !important; font-weight:600; "
+        f"margin:0.4rem 0 0.6rem 0;'>"
+        f"{html.escape(str(data['name']))} "
+        f"({html.escape(str(data['symbol']))})</div>",
+        unsafe_allow_html=True,
+    )
     metric_col1, metric_col2, metric_col3 = st.columns(3)
     metric_col1.metric("현재가", f"{prefix}{data['price']:,.2f}", change_label)
     metric_col2.metric("시가총액", format_market_cap(data["market_cap"], prefix))
