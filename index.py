@@ -88,6 +88,18 @@ def inject_styles() -> None:
     )
 
 
+def apply_query_navigation() -> None:
+    """ETF 종목 클릭 등 외부 요청으로 개별 종목 분석 탭 전환"""
+    goto = st.query_params.get("goto", "")
+    symbol = str(st.query_params.get("symbol", "")).strip().upper()
+    if goto != "stock" or not symbol:
+        return
+
+    st.session_state["symbol"] = symbol
+    st.session_state["nav_page"] = PAGE_STOCK
+    st.query_params.clear()
+
+
 def render_top_bar() -> str:
     """상단 top-bar 탭 메뉴를 렌더하고 선택된 페이지명을 반환"""
     if st.session_state.get("nav_page") not in PAGE_OPTIONS:
@@ -138,6 +150,7 @@ def main() -> None:
     import ref_stockanly
 
     clear_caches_and_reload_stock_list()
+    apply_query_navigation()
     inject_styles()
 
     if "symbol" not in st.session_state:

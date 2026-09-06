@@ -17,35 +17,41 @@ MAX_GRID_ROWS = 12
 
 
 @st.cache_data
-def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[str]]]:
-    """kospilist.json에서 ETF 섹터 집계 및 섹터별 종목명 목록 로드"""
+def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict[str, str]]]]:
+    """kospilist.json에서 ETF 섹터 집계 및 섹터별 종목(이름·심볼) 목록 로드"""
     with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
         payload = json.load(file)
 
-    sector_names: dict[str, list[str]] = {}
+    sector_etfs: dict[str, list[dict[str, str]]] = {}
+    seen: dict[str, set[str]] = {}
     for items in payload.get("markets", {}).values():
         for item in items:
             if item.get("ETF") != "Y":
                 continue
             sector = (item.get("sector") or "").strip() or "기타"
             name = str(item.get("name", "")).strip()
-            if not name:
+            symbol = str(item.get("yahoosymbol", "")).strip()
+            if not name or not symbol:
                 continue
-            names = sector_names.setdefault(sector, [])
-            if name not in names:
-                names.append(name)
+            used = seen.setdefault(sector, set())
+            if symbol in used:
+                continue
+            used.add(symbol)
+            sector_etfs.setdefault(sector, []).append(
+                {"name": name, "yahoosymbol": symbol}
+            )
 
-    for names in sector_names.values():
-        names.sort()
+    for etfs in sector_etfs.values():
+        etfs.sort(key=lambda row: row["name"])
 
     count_rows = [
-        {"섹터": sector, "수": len(names)}
-        for sector, names in sorted(
-            sector_names.items(),
+        {"섹터": sector, "수": len(etfs)}
+        for sector, etfs in sorted(
+            sector_etfs.items(),
             key=lambda item: (-len(item[1]), item[0]),
         )
     ]
-    return pd.DataFrame(count_rows), sector_names
+    return pd.DataFrame(count_rows), sector_etfs
 
 
 def build_sector_grid_rows(
@@ -75,19 +81,25 @@ def build_sector_grid_rows(
     return rows
 
 
-def _name_chips_html(names: list[str]) -> str:
-    """종목명을 가로 네모박스(칩) HTML로 변환"""
-    if not names:
+def _name_chips_html(etfs: list[dict[str, str]]) -> str:
+    """종목명을 클릭 가능한 가로 네모박스(칩) HTML로 변환"""
+    if not etfs:
         return '<span class="empty-msg">표시할 ETF가 없습니다.</span>'
-    return "".join(
-        f'<span class="name-chip">{html.escape(name)}</span>' for name in names
-    )
+    chips = []
+    for etf in etfs:
+        name = html.escape(etf["name"])
+        symbol = html.escape(etf["yahoosymbol"])
+        chips.append(
+            f'<button type="button" class="name-chip" '
+            f'data-symbol="{symbol}" title="{symbol} 분석 보기">{name}</button>'
+        )
+    return "".join(chips)
 
 
 def build_sector_grid_html(
-    grid_rows: list[dict], sector_names: dict[str, list[str]]
+    grid_rows: list[dict], sector_etfs: dict[str, list[dict[str, str]]]
 ) -> str:
-    """클릭 시 행이 펼쳐지는 HTML 섹터 그리드 생성"""
+    """클릭 시 행이 펼쳐지고, 종목 클릭 시 개별 분석으로 이동하는 HTML 그리드"""
     body_rows: list[str] = []
 
     for idx, row in enumerate(grid_rows):
@@ -119,8 +131,8 @@ def build_sector_grid_html(
             else '<td class="count"></td>'
         )
 
-        left_names = sector_names.get(left_sector, []) if left_sector else []
-        right_names = sector_names.get(right_sector, []) if right_sector else []
+        left_etfs = sector_etfs.get(left_sector, []) if left_sector else []
+        right_etfs = sector_etfs.get(right_sector, []) if right_sector else []
 
         body_rows.append(
             f"""
@@ -133,16 +145,16 @@ def build_sector_grid_html(
             <tr class="detail-row" id="detail-{idx}-L">
               <td colspan="4">
                 <div class="detail-wrap">
-                  <div class="detail-title">{html.escape(left_sector)} 종목</div>
-                  <div class="chip-row">{_name_chips_html(left_names)}</div>
+                  <div class="detail-title">{html.escape(left_sector)} 종목 · 클릭 시 개별 분석</div>
+                  <div class="chip-row">{_name_chips_html(left_etfs)}</div>
                 </div>
               </td>
             </tr>
             <tr class="detail-row" id="detail-{idx}-R">
               <td colspan="4">
                 <div class="detail-wrap">
-                  <div class="detail-title">{html.escape(right_sector)} 종목</div>
-                  <div class="chip-row">{_name_chips_html(right_names)}</div>
+                  <div class="detail-title">{html.escape(right_sector)} 종목 · 클릭 시 개별 분석</div>
+                  <div class="chip-row">{_name_chips_html(right_etfs)}</div>
                 </div>
               </td>
             </tr>
@@ -162,6 +174,7 @@ def build_sector_grid_html(
     --active: #dbeafe;
     --chip-bg: #f8fafc;
     --chip-border: #cbd5e1;
+    --chip-hover: #dbeafe;
     --text: #0f172a;
     --muted: #64748b;
   }}
@@ -246,6 +259,13 @@ def build_sector_grid_html(
     white-space: nowrap;
     line-height: 1.3;
     font-size: 10px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+  }}
+  .name-chip:hover {{
+    background: var(--chip-hover);
+    border-color: #93c5fd;
   }}
   .empty-msg {{
     color: var(--muted);
@@ -291,9 +311,25 @@ def build_sector_grid_html(
           detail.classList.toggle("open", willOpen);
           cell.classList.toggle("active", willOpen);
 
-          // iframe 높이를 내용에 맞게 요청 (Streamlit parent가 무시할 수 있음)
           var height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
           window.parent.postMessage({{ isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: height }}, "*");
+        }});
+      }});
+
+      document.querySelectorAll("button.name-chip").forEach(function (chip) {{
+        chip.addEventListener("click", function (event) {{
+          event.preventDefault();
+          event.stopPropagation();
+          var symbol = chip.getAttribute("data-symbol");
+          if (!symbol) return;
+          try {{
+            var url = new URL(window.parent.location.href);
+            url.searchParams.set("goto", "stock");
+            url.searchParams.set("symbol", symbol);
+            window.parent.location.href = url.toString();
+          }} catch (err) {{
+            console.error(err);
+          }}
         }});
       }});
     }})();
@@ -310,7 +346,7 @@ def render_sector_count_grid() -> None:
         return
 
     try:
-        sector_df, sector_names = load_etf_sector_data()
+        sector_df, sector_etfs = load_etf_sector_data()
     except json.JSONDecodeError:
         st.warning("종목 목록 JSON 파일 형식이 올바르지 않습니다.")
         return
@@ -327,14 +363,13 @@ def render_sector_count_grid() -> None:
     st.caption(
         f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · "
         f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행 · "
-        "섹터를 클릭하면 종목명이 가로로 펼쳐집니다"
+        "섹터 클릭 시 종목 목록 · 종목 클릭 시 개별 종목 분석"
     )
 
-    # '기타'처럼 종목이 많은 섹터 펼침을 고려해 여유 높이 확보
-    max_names = max((len(names) for names in sector_names.values()), default=0)
+    max_names = max((len(etfs) for etfs in sector_etfs.values()), default=0)
     estimated_height = 48 + len(grid_rows) * 38 + 120 + min(max_names, 40) * 4
     components.html(
-        build_sector_grid_html(grid_rows, sector_names),
+        build_sector_grid_html(grid_rows, sector_etfs),
         height=max(estimated_height, 720),
         scrolling=True,
     )
