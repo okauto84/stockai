@@ -332,10 +332,11 @@ def filter_stock_list(
     filtered_df = stock_df.copy()
     if market_filter == "ETF":
         filtered_df = filtered_df[filtered_df["ETF"] == "Y"]
-        if sector_filter and sector_filter != "전체":
-            filtered_df = filtered_df[filtered_df["섹터"] == sector_filter]
     elif market_filter != "전체":
         filtered_df = filtered_df[filtered_df["시장"] == market_filter]
+
+    if sector_filter and sector_filter != "전체":
+        filtered_df = filtered_df[filtered_df["섹터"] == sector_filter]
 
     if keyword:
         keyword_upper = keyword.upper()
@@ -392,13 +393,10 @@ def render_stock_list_grid() -> None:
             key="stock_list_market_ui",
         )
     with filter_col2:
-        sector_enabled = market_filter == "ETF"
         sector_filter = st.selectbox(
             "섹터",
             options=sector_options,
-            disabled=not sector_enabled,
             key="stock_list_sector_ui",
-            help="시장에서 ETF를 선택하면 섹터 검색이 가능합니다",
         )
     with filter_col3:
         keyword = st.text_input(
@@ -412,9 +410,7 @@ def render_stock_list_grid() -> None:
 
     if search_clicked:
         st.session_state["stock_list_market_applied"] = market_filter
-        st.session_state["stock_list_sector_applied"] = (
-            sector_filter if sector_enabled else "전체"
-        )
+        st.session_state["stock_list_sector_applied"] = sector_filter
         st.session_state["stock_list_keyword_applied"] = keyword.strip()
 
     display_df = filter_stock_list(
@@ -425,15 +421,16 @@ def render_stock_list_grid() -> None:
     )
 
     display_columns = ["시장", "종목코드", "종목명", "야후심볼", "ETF"]
-    if st.session_state["stock_list_market_applied"] == "ETF":
+    show_sector = (
+        st.session_state["stock_list_market_applied"] == "ETF"
+        or st.session_state["stock_list_sector_applied"] != "전체"
+    )
+    if show_sector:
         display_columns.append("섹터")
     display_df = display_df[display_columns]
 
     sector_caption = ""
-    if (
-        st.session_state["stock_list_market_applied"] == "ETF"
-        and st.session_state["stock_list_sector_applied"] != "전체"
-    ):
+    if st.session_state["stock_list_sector_applied"] != "전체":
         sector_caption = f" · 섹터 {st.session_state['stock_list_sector_applied']}"
 
     st.caption(
