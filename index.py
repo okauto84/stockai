@@ -89,14 +89,29 @@ def inject_styles() -> None:
 
 
 def apply_query_navigation() -> None:
-    """ETF 종목 클릭 등 외부 요청으로 개별 종목 분석 탭 전환"""
+    """ETF 종목 클릭 시 개별 종목 분석 탭·검색 그리드로 전환"""
     goto = st.query_params.get("goto", "")
     symbol = str(st.query_params.get("symbol", "")).strip().upper()
     if goto != "stock" or not symbol:
         return
 
+    sector = str(st.query_params.get("sector", "")).strip()
+    keyword = str(st.query_params.get("keyword", "")).strip()
+    if not keyword:
+        keyword = symbol.split(".")[0]
+
     st.session_state["symbol"] = symbol
     st.session_state["nav_page"] = PAGE_STOCK
+
+    # 종목 검색 그리드에 해당 ETF가 보이도록 필터 반영
+    st.session_state["stock_list_market_ui"] = "ETF"
+    st.session_state["stock_list_market_applied"] = "ETF"
+    if sector:
+        st.session_state["stock_list_sector_ui"] = sector
+        st.session_state["stock_list_sector_applied"] = sector
+    st.session_state["stock_list_keyword_ui"] = keyword
+    st.session_state["stock_list_keyword_applied"] = keyword
+
     st.query_params.clear()
 
 
