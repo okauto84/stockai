@@ -90,7 +90,7 @@ def inject_styles() -> None:
 
 def apply_query_navigation() -> None:
     """ETF 종목 클릭 시 개별 종목 분석 탭·검색 그리드로 전환"""
-    goto = st.query_params.get("goto", "")
+    goto = str(st.query_params.get("goto", "")).strip().lower()
     symbol = str(st.query_params.get("symbol", "")).strip().upper()
     if goto != "stock" or not symbol:
         return
@@ -112,7 +112,10 @@ def apply_query_navigation() -> None:
     st.session_state["stock_list_keyword_ui"] = keyword
     st.session_state["stock_list_keyword_applied"] = keyword
 
-    st.query_params.clear()
+    # 전체 clear 대신 네비 키만 제거 (다른 쿼리 유지, 재진입 방지)
+    for key in ("goto", "symbol", "sector", "keyword"):
+        if key in st.query_params:
+            del st.query_params[key]
 
 
 def render_top_bar() -> str:

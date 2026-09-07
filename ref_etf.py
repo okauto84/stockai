@@ -7,6 +7,7 @@ import json
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 import pandas as pd
 import streamlit as st
@@ -152,19 +153,32 @@ def _stock_chip(
 ) -> str:
     """개별 종목 분석 탭 이동용 칩(동일 창) HTML 생성"""
     name = html.escape(etf["name"])
-    symbol = html.escape(etf["yahoosymbol"], quote=True)
+    symbol = str(etf["yahoosymbol"]).strip()
+    keyword = str(etf.get("code") or etf["name"]).strip()
+    # <a> 딥링크 + data-* (JS 폴백). iframe 핸들러만으로는 클릭이 유실될 수 있음.
+    href = "?" + urlencode(
+        {
+            "goto": "stock",
+            "symbol": symbol,
+            "sector": sector,
+            "keyword": keyword,
+        }
+    )
+    href_q = html.escape(href, quote=True)
+    symbol_q = html.escape(symbol, quote=True)
     sector_q = html.escape(sector, quote=True)
-    keyword = html.escape(etf.get("code") or etf["name"], quote=True)
+    keyword_q = html.escape(keyword, quote=True)
+    title_q = html.escape(f"{symbol} 분석 보기", quote=True)
     swatch = ""
     if color:
         swatch = (
             f'<i class="chip-swatch" style="background:{html.escape(color, quote=True)}"></i>'
         )
     return (
-        f'<span class="name-chip" role="button" tabindex="0" '
-        f'data-symbol="{symbol}" data-sector="{sector_q}" '
-        f'data-keyword="{keyword}" title="{symbol} 분석 보기">'
-        f"{swatch}{name}</span>"
+        f'<a class="name-chip" href="{href_q}" target="_top" rel="noopener" '
+        f'data-symbol="{symbol_q}" data-sector="{sector_q}" '
+        f'data-keyword="{keyword_q}" title="{title_q}">'
+        f"{swatch}{name}</a>"
     )
 
 
@@ -578,7 +592,7 @@ def build_sector_grid_html(
     gap: 8px;
     align-items: center;
   }}
-  span.name-chip {{
+  a.name-chip {{
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -594,14 +608,15 @@ def build_sector_grid_html(
     cursor: pointer;
     user-select: none;
   }}
-  span.name-chip .chip-swatch {{
+  a.name-chip .chip-swatch {{
     display: inline-block;
     width: 8px;
     height: 8px;
     border-radius: 2px;
     flex: 0 0 auto;
+    pointer-events: none;
   }}
-  span.name-chip:hover {{
+  a.name-chip:hover {{
     background: #dbeafe;
     border-color: #93c5fd;
   }}
@@ -690,22 +705,6 @@ def _latest_grid_date(grid: list[dict]) -> date | None:
         except Exception:
             continue
     return max(dates) if dates else None
-
-
-def _needs_api_update(
-    grid: list[dict], today: date, *, lookback_days: int = UPDATE_LOOKBACK_DAYS
-) -> bool:
-    """
-    API 호출 필요 여부.
-
-    최신 그리드 날짜가 오늘(today) 이상이면 이미 최신이므로 스킵.
-    lookback 구간 안이어도 오늘까지 비어 있을 수 있으므로, today 미만이면 호출한다.
-    """
-    del lookback_days  # 갱신 구간 계산은 merge 단계에서 사용
-    latest = _latest_grid_date(grid)
-    if latest is None:
-        return True
-    return latest < today
 
 
 def _merge_grid_by_date(
@@ -799,7 +798,7 @@ def update_sector_payload_from_api(
       예) 오늘=2026-09-07, N=5 → 2026-09-02 ~ 2026-09-07
       예) 오늘=2026-09-07, N=4 → 2026-09-03 ~ 2026-09-07
     - 스킵: (오늘 − N) 미만 날짜는 기존 값 유지
-    - API 생략: 그리드 최신일이 이미 오늘 이상인 종목만
+    - 오늘 날짜: 최신일이 이미 오늘이어도 무조건 API로 재갱신
     """
     today = date.today()
     lookback_days = max(0, int(lookback_days))
@@ -819,7 +818,7 @@ def update_sector_payload_from_api(
             0.0,
             text=(
                 f"{label_prefix}ETF 갱신 중 "
-                f"({compare_from.isoformat()} ~ {today.isoformat()})"
+                f"({compare_from.isoformat()} ~ {today.isoformat()}, 오늘 포함 재갱신)"
             ),
         )
 
@@ -837,11 +836,7 @@ def update_sector_payload_from_api(
             stats["failed"] += 1
             continue
 
-        # 오늘 데이터까지 있으면 API 생략
-        if not _needs_api_update(grid, today, lookback_days=lookback_days):
-            stats["skipped"] += 1
-            continue
-
+        # 오늘 포함 구간은 항상 API 호출 (최신일이 오늘이어도 오늘 재갱신)
         try:
             if kospi_chart is None:
                 kospi_chart = ref_stockanly.fetch_chart(
@@ -861,7 +856,7 @@ def update_sector_payload_from_api(
                 # 최초 적재만 전체 그리드 사용
                 item["grid"] = api_grid
             else:
-                # 기존 데이터가 있으면 갱신 구간만 반영 (이전 날짜 스킵)
+                # 기존 데이터가 있으면 갱신 구간만 반영 (이전 날짜 스킵, 오늘은 덮어씀)
                 item["grid"] = _merge_grid_by_date(
                     grid, api_grid, compare_from=compare_from
                 )
@@ -998,7 +993,8 @@ def _prompt_update_lookback_days() -> None:
         step=1,
         help=(
             "예: 오늘이 2026-09-07이고 5를 입력하면 "
-            "2026-09-02 ~ 2026-09-07만 갱신하고, 그 이전은 스킵합니다."
+            "2026-09-02 ~ 2026-09-07만 갱신하고, 그 이전은 스킵합니다. "
+            "오늘 날짜는 항상 재갱신합니다."
         ),
         key="etf_update_lookback_input",
     )
@@ -1006,18 +1002,21 @@ def _prompt_update_lookback_days() -> None:
     compare_from = today - timedelta(days=lookback)
     st.info(
         f"갱신 구간: **{compare_from.isoformat()} ~ {today.isoformat()}**  \n"
-        f"스킵: **{compare_from.isoformat()} 미만** 날짜는 기존 값 유지"
+        f"스킵: **{compare_from.isoformat()} 미만** 날짜는 기존 값 유지  \n"
+        f"오늘(**{today.isoformat()}**)은 최신 데이터가 있어도 무조건 재갱신"
     )
     run_col, cancel_col = st.columns(2)
     with run_col:
         if st.button("업데이트 실행", type="primary", use_container_width=True):
             st.session_state["etf_pending_lookback_days"] = lookback
             st.session_state["etf_update_lookback_ui"] = lookback
-            st.session_state.pop("etf_show_update_prompt", None)
+            # 다이얼로그/프롬프트 즉시 닫기
+            st.session_state["etf_show_update_prompt"] = False
             st.rerun()
     with cancel_col:
         if st.button("취소", use_container_width=True):
-            st.session_state.pop("etf_show_update_prompt", None)
+            st.session_state["etf_show_update_prompt"] = False
+            st.session_state.pop("etf_pending_lookback_days", None)
             st.rerun()
 
 
@@ -1036,43 +1035,47 @@ def render_data_update_button() -> None:
     if clicked:
         st.session_state["etf_show_update_prompt"] = True
 
-    # 실행 대기 중인 갱신 (다이얼로그/프롬프트에서 확인 후)
-    pending_lookback = st.session_state.pop("etf_pending_lookback_days", None)
-    if pending_lookback is not None:
-        lookback_days = max(0, int(pending_lookback))
-        compare_from = date.today() - timedelta(days=lookback_days)
-        with st.spinner(
-            f"전체 섹터 ETF 데이터 갱신 중... "
-            f"({compare_from.isoformat()} ~ {date.today().isoformat()})"
-        ):
-            summary = update_all_sector_json_files(lookback_days=lookback_days)
-        st.success(
-            f"전체 갱신 완료 · "
-            f"구간 {compare_from.isoformat()} ~ {date.today().isoformat()} "
-            f"(입력 {lookback_days}일) · "
-            f"파일 {summary['file_ok']}/{summary['files']} · "
-            f"API 갱신 {summary['updated']} · "
-            f"스킵 {summary['skipped']} · "
-            f"종목 실패 {summary['failed']} · "
-            f"파일 실패 {summary['file_failed']}"
-        )
+    pending_lookback = st.session_state.get("etf_pending_lookback_days")
+    show_prompt = bool(st.session_state.get("etf_show_update_prompt"))
+
+    # 실행이 예약되면 입력 창을 열지 않음(창 닫힘)
+    if show_prompt and pending_lookback is None:
+        dialog_fn = getattr(st, "dialog", None)
+        if callable(dialog_fn):
+
+            @dialog_fn("Data update · 스킵 일수 입력")
+            def _lookback_dialog() -> None:
+                _prompt_update_lookback_days()
+
+            _lookback_dialog()
+        else:
+            with st.container(border=True):
+                st.markdown("**Data update · 스킵 일수 입력**")
+                _prompt_update_lookback_days()
+
+    if pending_lookback is None:
         return
 
-    if not st.session_state.get("etf_show_update_prompt"):
-        return
-
-    # Streamlit dialog(알람) 지원 시 모달, 아니면 인라인 입력
-    dialog_fn = getattr(st, "dialog", None)
-    if callable(dialog_fn):
-        @dialog_fn("Data update · 스킵 일수 입력")
-        def _lookback_dialog() -> None:
-            _prompt_update_lookback_days()
-
-        _lookback_dialog()
-    else:
-        with st.container(border=True):
-            st.markdown("**Data update · 스킵 일수 입력**")
-            _prompt_update_lookback_days()
+    # 창을 닫은 뒤 갱신 실행
+    st.session_state.pop("etf_pending_lookback_days", None)
+    st.session_state["etf_show_update_prompt"] = False
+    lookback_days = max(0, int(pending_lookback))
+    compare_from = date.today() - timedelta(days=lookback_days)
+    with st.spinner(
+        f"전체 섹터 ETF 데이터 갱신 중... "
+        f"({compare_from.isoformat()} ~ {date.today().isoformat()}, 오늘 포함 재갱신)"
+    ):
+        summary = update_all_sector_json_files(lookback_days=lookback_days)
+    st.success(
+        f"전체 갱신 완료 · "
+        f"구간 {compare_from.isoformat()} ~ {date.today().isoformat()} "
+        f"(입력 {lookback_days}일, 오늘 재갱신) · "
+        f"파일 {summary['file_ok']}/{summary['files']} · "
+        f"API 갱신 {summary['updated']} · "
+        f"스킵 {summary['skipped']} · "
+        f"종목 실패 {summary['failed']} · "
+        f"파일 실패 {summary['file_failed']}"
+    )
 
 
 def install_same_window_chip_navigation() -> None:
@@ -1086,8 +1089,8 @@ def install_same_window_chip_navigation() -> None:
 
           function install(doc) {
             if (!doc || !doc.body) return false;
-            if (doc.documentElement.dataset.etfHandlersV5 === '1') return true;
-            doc.documentElement.dataset.etfHandlersV5 = '1';
+            if (doc.documentElement.dataset.etfHandlersV7 === '1') return true;
+            doc.documentElement.dataset.etfHandlersV7 = '1';
 
             if (!doc.getElementById('etf-chart-tooltip-style')) {
               const style = doc.createElement('style');
@@ -1147,6 +1150,28 @@ def install_same_window_chip_navigation() -> None:
               }
             }
 
+            function navigateChip(chip) {
+              const symbol = chip.getAttribute('data-symbol') || '';
+              const sector = chip.getAttribute('data-sector') || '';
+              const keyword = chip.getAttribute('data-keyword') || '';
+              if (!symbol) {
+                const href = chip.getAttribute('href');
+                if (href) parentWin.location.assign(href);
+                return;
+              }
+              try {
+                const url = new URL(parentWin.location.href);
+                url.searchParams.set('goto', 'stock');
+                url.searchParams.set('symbol', symbol);
+                url.searchParams.set('sector', sector);
+                url.searchParams.set('keyword', keyword);
+                parentWin.location.assign(url.toString());
+              } catch (err) {
+                const href = chip.getAttribute('href');
+                if (href) parentWin.location.assign(href);
+              }
+            }
+
             doc.addEventListener('click', function (e) {
               const raw = e.target;
               const el = raw && raw.nodeType === 3 ? raw.parentElement : raw;
@@ -1161,21 +1186,12 @@ def install_same_window_chip_navigation() -> None:
               }
 
               const chip = el && el.closest
-                ? el.closest('span.name-chip[data-symbol]')
+                ? el.closest('a.name-chip, span.name-chip[data-symbol]')
                 : null;
               if (!chip) return;
               e.preventDefault();
               e.stopPropagation();
-              const symbol = chip.getAttribute('data-symbol') || '';
-              const sector = chip.getAttribute('data-sector') || '';
-              const keyword = chip.getAttribute('data-keyword') || '';
-              if (!symbol) return;
-              const url = new URL(parentWin.location.href);
-              url.searchParams.set('goto', 'stock');
-              url.searchParams.set('symbol', symbol);
-              url.searchParams.set('sector', sector);
-              url.searchParams.set('keyword', keyword);
-              parentWin.location.assign(url.toString());
+              navigateChip(chip);
             }, true);
 
             doc.addEventListener('keydown', function (e) {
@@ -1183,9 +1199,17 @@ def install_same_window_chip_navigation() -> None:
               const toggle = e.target && e.target.closest
                 ? e.target.closest('.sector-toggle[data-expand]')
                 : null;
-              if (!toggle) return;
+              if (toggle) {
+                e.preventDefault();
+                toggleSector(toggle);
+                return;
+              }
+              const chip = e.target && e.target.closest
+                ? e.target.closest('a.name-chip, span.name-chip[data-symbol]')
+                : null;
+              if (!chip) return;
               e.preventDefault();
-              toggleSector(toggle);
+              navigateChip(chip);
             }, true);
 
             const tip = ensureTooltip();
