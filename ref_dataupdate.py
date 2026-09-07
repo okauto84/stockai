@@ -1,11 +1,15 @@
-"""Data update 페이지: data/etf/*.json 일괄 갱신·저장"""
+"""Data update 페이지: data/etf/*.json 일괄 갱신·저장 (로컬 + GitHub)"""
 
 from __future__ import annotations
 
 import json
+import os
+import re
+import subprocess
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote, urlparse
 
 import pandas as pd
 import streamlit as st
@@ -19,6 +23,250 @@ API_SLEEP_SECONDS = 1
 SECTOR_FILE_SLEEP_SECONDS = 2
 KOSPI_SYMBOL = "^KS11"
 GRID_COLUMNS = list(ref_stockanly.GRID_COLUMNS)
+
+# GitHub 저장소 (로컬 갱신 후 origin으로 커밋·푸시)
+GITHUB_DEFAULT_BRANCH = "main"
+GITHUB_DATA_REL_DIR = "data/etf"
+GITHUB_COMMIT_NAME = "stockai-dataupdate"
+GITHUB_COMMIT_EMAIL = "stockai-dataupdate@users.noreply.github.com"
+
+
+def _run_git(args: list[str], *, check: bool = True, mask: str | None = None) -> subprocess.CompletedProcess[str]:
+    """git 명령 실행 (토큰 등 민감값은 stderr/stdout에서 마스킹용으로만 보관)"""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=ROOT_DIR,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if check and result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        if mask and mask in err:
+            err = err.replace(mask, "***")
+        raise RuntimeError(err or f"git {' '.join(args)} failed ({result.returncode})")
+    return result
+
+
+def _secret_lookup(*keys: str) -> str:
+    """st.secrets / 환경변수에서 문자열 값 조회"""
+    # 1) 환경변수
+    for key in keys:
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+
+    # 2) Streamlit secrets (flat / nested github.*)
+    try:
+        secrets = st.secrets
+    except Exception:
+        return ""
+
+    for key in keys:
+        try:
+            value = secrets.get(key, "")
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        except Exception:
+            pass
+
+    try:
+        github = secrets.get("github", {})
+        if hasattr(github, "get"):
+            for key in ("token", "pat", "access_token", *keys):
+                value = github.get(key, "")
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def get_github_token() -> str:
+    """GitHub push용 토큰 (GITHUB_TOKEN / STOCKAI_GITHUB_TOKEN / secrets)"""
+    return _secret_lookup(
+        "GITHUB_TOKEN",
+        "STOCKAI_GITHUB_TOKEN",
+        "GH_TOKEN",
+    )
+
+
+def get_github_branch() -> str:
+    """푸시 대상 브랜치"""
+    branch = _secret_lookup("GITHUB_BRANCH", "STOCKAI_GITHUB_BRANCH")
+    if branch:
+        return branch
+    try:
+        result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], check=False)
+        name = (result.stdout or "").strip()
+        if result.returncode == 0 and name and name != "HEAD":
+            return name
+    except Exception:
+        pass
+    return GITHUB_DEFAULT_BRANCH
+
+
+def parse_github_repo_slug(remote_url: str) -> str | None:
+    """origin URL → 'owner/repo'"""
+    raw = (remote_url or "").strip()
+    if not raw:
+        return None
+    raw = re.sub(r"\.git$", "", raw)
+    # git@github.com:owner/repo
+    m = re.match(r"git@github\.com:(.+)$", raw)
+    if m:
+        return m.group(1).strip("/")
+    # https://github.com/owner/repo
+    if "github.com" in raw:
+        try:
+            path = urlparse(raw).path.strip("/")
+            if path.count("/") >= 1:
+                parts = path.split("/")
+                return f"{parts[0]}/{parts[1]}"
+        except Exception:
+            return None
+    return None
+
+
+def get_github_remote_info() -> dict:
+    """현재 git origin 기준 GitHub 저장소 정보"""
+    info = {
+        "remote": "",
+        "slug": "",
+        "https_url": "",
+        "web_url": "",
+        "branch": get_github_branch(),
+        "data_dir": GITHUB_DATA_REL_DIR,
+        "token_configured": bool(get_github_token()),
+    }
+    # secrets로 저장소 지정 가능
+    slug_override = _secret_lookup("GITHUB_REPO", "STOCKAI_GITHUB_REPO")
+    try:
+        result = _run_git(["remote", "get-url", "origin"], check=False)
+        remote = (result.stdout or "").strip() if result.returncode == 0 else ""
+    except Exception:
+        remote = ""
+    info["remote"] = remote
+    slug = slug_override or (parse_github_repo_slug(remote) if remote else "")
+    info["slug"] = slug or ""
+    if slug:
+        info["https_url"] = f"https://github.com/{slug}.git"
+        info["web_url"] = f"https://github.com/{slug}"
+    return info
+
+
+def _git_has_changes(paths: list[str]) -> bool:
+    """지정 경로에 커밋할 변경이 있는지"""
+    result = _run_git(["status", "--porcelain", "--", *paths], check=False)
+    return bool((result.stdout or "").strip())
+
+
+def push_etf_data_to_github(
+    *,
+    message: str | None = None,
+    rel_paths: list[str] | None = None,
+) -> dict:
+    """
+    갱신된 data/etf/*.json 을 GitHub origin 저장소에 커밋·푸시.
+
+    - 로컬 파일 저장 이후 호출
+    - 토큰이 있으면 HTTPS + x-access-token 으로 푸시
+    - 토큰이 없으면 기존 credential 로 push 시도
+    """
+    remote = get_github_remote_info()
+    branch = remote["branch"]
+    paths = rel_paths or [GITHUB_DATA_REL_DIR]
+    commit_message = message or (
+        f"chore(data): update ETF sector JSON ({date.today().isoformat()})"
+    )
+    result: dict = {
+        "ok": False,
+        "skipped": False,
+        "committed": False,
+        "pushed": False,
+        "branch": branch,
+        "slug": remote.get("slug") or "",
+        "web_url": remote.get("web_url") or "",
+        "files": paths,
+        "commit": "",
+        "message": commit_message,
+        "error": "",
+    }
+
+    if not remote.get("slug"):
+        result["error"] = (
+            "GitHub 저장소를 확인할 수 없습니다. "
+            "`git remote` 또는 secrets GITHUB_REPO(owner/repo)를 설정하세요."
+        )
+        return result
+
+    try:
+        if not _git_has_changes(paths):
+            result["ok"] = True
+            result["skipped"] = True
+            result["message"] = "커밋할 data/etf 변경이 없습니다."
+            return result
+
+        _run_git(["add", "--", *paths])
+        # git config를 바꾸지 않고 1회성 author 지정
+        commit = _run_git(
+            [
+                "-c",
+                f"user.name={GITHUB_COMMIT_NAME}",
+                "-c",
+                f"user.email={GITHUB_COMMIT_EMAIL}",
+                "commit",
+                "-m",
+                commit_message,
+                "--",
+                *paths,
+            ],
+            check=False,
+        )
+        out = ((commit.stdout or "") + (commit.stderr or "")).strip()
+        if commit.returncode != 0:
+            if "nothing to commit" in out.lower():
+                result["ok"] = True
+                result["skipped"] = True
+                result["message"] = "커밋할 변경이 없습니다."
+                return result
+            raise RuntimeError(out or "git commit failed")
+
+        result["committed"] = True
+        head = _run_git(["rev-parse", "--short", "HEAD"], check=False)
+        result["commit"] = (head.stdout or "").strip()
+
+        token = get_github_token()
+        push_args: list[str]
+        mask: str | None = None
+        if token:
+            # credential 없이 토큰으로 푸시 (remote URL은 변경하지 않음)
+            auth_url = (
+                f"https://x-access-token:{quote(token, safe='')}@github.com/"
+                f"{remote['slug']}.git"
+            )
+            mask = token
+            push_args = ["push", auth_url, f"HEAD:{branch}"]
+        else:
+            push_args = ["push", "-u", "origin", f"HEAD:{branch}"]
+
+        _run_git(push_args, check=True, mask=mask)
+        result["pushed"] = True
+        result["ok"] = True
+        result["message"] = (
+            f"GitHub 푸시 완료 · {remote['slug']}@{branch}"
+            + (f" ({result['commit']})" if result["commit"] else "")
+        )
+        return result
+    except Exception as exc:
+        err = str(exc)
+        token = get_github_token()
+        if token and token in err:
+            err = err.replace(token, "***")
+        result["error"] = err
+        result["ok"] = False
+        return result
 
 
 def list_etf_sector_json_files() -> list[Path]:
@@ -361,10 +609,13 @@ def _invalidate_etf_chart_cache() -> None:
 
 
 def update_all_sector_json_files(
-    *, lookback_days: int = UPDATE_LOOKBACK_DAYS
+    *,
+    lookback_days: int = UPDATE_LOOKBACK_DAYS,
+    push_to_github: bool = True,
 ) -> dict:
     """
-    data/etf/*.json 전체 섹터 파일을 순회하며 ETF 그리드 갱신·저장.
+    data/etf/*.json 전체 섹터 파일을 순회하며 ETF 그리드 갱신·로컬 저장 후
+    (옵션) GitHub origin 저장소에 커밋·푸시.
 
     파일 단위 작업 사이에는 SECTOR_FILE_SLEEP_SECONDS(2초) 간격을 둔다.
     """
@@ -379,6 +630,7 @@ def update_all_sector_json_files(
         "failed": 0,
         "lookback_days": lookback_days,
         "details": [],
+        "github": None,
     }
     if not files:
         st.warning(f"갱신할 섹터 JSON이 없습니다: {ETF_DATA_DIR}")
@@ -408,7 +660,7 @@ def update_all_sector_json_files(
             if not saved_path.exists() or saved_path.stat().st_size <= 0:
                 raise OSError(f"저장 후 파일이 비어 있습니다: {saved_path}")
             status.success(
-                f"{label} · 저장 완료 ({saved_path.name}, "
+                f"{label} · 로컬 저장 완료 ({saved_path.name}, "
                 f"{saved_path.stat().st_size:,} bytes)"
             )
             summary["file_ok"] += 1
@@ -448,6 +700,36 @@ def update_all_sector_json_files(
             time.sleep(SECTOR_FILE_SLEEP_SECONDS)
 
     file_progress.empty()
+
+    if push_to_github and summary["file_ok"] > 0:
+        remote = get_github_remote_info()
+        status.info(
+            f"GitHub 저장소에 푸시 중... "
+            f"({remote.get('slug') or 'unknown'}@{remote.get('branch')})"
+        )
+        gh = push_etf_data_to_github(
+            message=(
+                f"chore(data): ETF sector JSON update "
+                f"{date.today().isoformat()} "
+                f"(lookback={lookback_days}d, files={summary['file_ok']})"
+            ),
+            rel_paths=[GITHUB_DATA_REL_DIR],
+        )
+        summary["github"] = gh
+        if gh.get("ok"):
+            if gh.get("skipped"):
+                status.info(f"GitHub: {gh.get('message')}")
+            else:
+                status.success(f"GitHub: {gh.get('message')}")
+        else:
+            status.error(f"GitHub 푸시 실패: {gh.get('error') or 'unknown'}")
+    elif push_to_github and summary["file_ok"] <= 0:
+        summary["github"] = {
+            "ok": False,
+            "skipped": True,
+            "message": "성공한 로컬 저장이 없어 GitHub 푸시를 건너뜁니다.",
+        }
+
     status.empty()
     _invalidate_etf_chart_cache()
     return summary
@@ -514,18 +796,24 @@ def _prompt_update_lookback_days() -> bool:
 
 def render_data_update_panel() -> None:
     """Data update 입력·실행 패널"""
+    remote = get_github_remote_info()
     btn_col, info_col = st.columns([1.2, 6])
     with btn_col:
         clicked = st.button(
             "Data update",
             use_container_width=True,
-            help="클릭 후 스킵 일수를 입력하면 data/etf/*.json 전체를 갱신합니다.",
+            help=(
+                "클릭 후 스킵 일수를 입력하면 data/etf/*.json 전체를 갱신하고 "
+                "GitHub 저장소에 푸시합니다."
+            ),
             key="etf_data_update_btn",
         )
     with info_col:
+        repo_label = remote.get("slug") or "(remote 미설정)"
+        token_label = "토큰 설정됨" if remote.get("token_configured") else "토큰 없음(기존 credential 사용)"
         st.caption(
-            "Data update: 스킵 일수 입력 후 모든 섹터 JSON을 API로 갱신·저장 "
-            f"({ETF_DATA_DIR})"
+            f"Data update: 로컬 `{ETF_DATA_DIR.as_posix()}` 갱신 후 "
+            f"GitHub `{repo_label}`@{remote.get('branch')} 푸시 · {token_label}"
         )
 
     if clicked:
@@ -535,6 +823,16 @@ def render_data_update_panel() -> None:
     if st.session_state.get("etf_show_update_prompt"):
         with st.container(border=True):
             st.markdown("**Data update · 스킵 일수 입력**")
+            if "etf_push_github" not in st.session_state:
+                st.session_state["etf_push_github"] = True
+            st.checkbox(
+                "갱신 후 GitHub 저장소에 커밋·푸시",
+                key="etf_push_github",
+                help=(
+                    "로컬 저장 후 origin(GitHub)에 data/etf 변경분을 푸시합니다. "
+                    "권장: 환경변수/secrets에 GITHUB_TOKEN(repo 권한) 설정."
+                ),
+            )
             _prompt_update_lookback_days()
 
     if not st.session_state.get("etf_do_update"):
@@ -548,21 +846,26 @@ def render_data_update_panel() -> None:
     st.session_state["etf_do_update"] = False
     st.session_state.pop("etf_pending_lookback_days", None)
     st.session_state["etf_show_update_prompt"] = False
+    push_to_github = bool(st.session_state.get("etf_push_github", True))
 
     lookback_days = max(0, int(pending_lookback))
     compare_from = date.today() - timedelta(days=lookback_days)
     with st.spinner(
         f"전체 섹터 ETF 데이터 갱신·저장 중... "
         f"({compare_from.isoformat()} ~ {date.today().isoformat()}, 오늘 포함 재갱신)"
+        + (" · 이후 GitHub 푸시" if push_to_github else "")
     ):
-        summary = update_all_sector_json_files(lookback_days=lookback_days)
+        summary = update_all_sector_json_files(
+            lookback_days=lookback_days,
+            push_to_github=push_to_github,
+        )
 
     saved_dir = ETF_DATA_DIR.resolve()
     st.success(
         f"전체 갱신 완료 · "
         f"구간 {compare_from.isoformat()} ~ {date.today().isoformat()} "
         f"(입력 {lookback_days}일, 오늘 재갱신) · "
-        f"저장 {summary['file_ok']}/{summary['files']} · "
+        f"로컬 저장 {summary['file_ok']}/{summary['files']} · "
         f"경로 `{saved_dir}` · "
         f"API 갱신 {summary['updated']} · "
         f"스킵 {summary['skipped']} · "
@@ -578,16 +881,45 @@ def render_data_update_panel() -> None:
         if failed:
             st.error("저장 실패 파일:\n- " + "\n- ".join(failed[:10]))
 
+    gh = summary.get("github")
+    if push_to_github and isinstance(gh, dict):
+        if gh.get("ok"):
+            link = gh.get("web_url") or remote.get("web_url") or ""
+            extra = f" · [저장소]({link})" if link else ""
+            if gh.get("skipped"):
+                st.info(f"GitHub: {gh.get('message')}{extra}")
+            else:
+                st.success(
+                    f"GitHub 푸시 완료 · `{gh.get('slug')}@{gh.get('branch')}`"
+                    + (f" · commit `{gh.get('commit')}`" if gh.get("commit") else "")
+                    + extra
+                )
+        else:
+            st.error(
+                "GitHub 푸시 실패: "
+                f"{gh.get('error') or 'unknown'}  \n"
+                "환경변수 `GITHUB_TOKEN`(repo 권한) 또는 "
+                "`secrets.github.token` / git credential을 확인하세요."
+            )
+
 
 def render_page() -> None:
     """Data update Streamlit 페이지"""
+    remote = get_github_remote_info()
     st.caption(
-        "data/etf 섹터 JSON을 Yahoo Finance API로 갱신·저장합니다. "
+        "data/etf 섹터 JSON을 Yahoo Finance API로 갱신합니다. "
+        "로컬에 저장한 뒤 GitHub 저장소(origin)에 커밋·푸시합니다. "
         "갱신 구간 이전 날짜는 스킵하고, 오늘은 항상 재갱신합니다."
     )
     file_count = len(list_etf_sector_json_files())
+    repo = remote.get("slug") or "(미설정)"
+    web = remote.get("web_url") or ""
+    token_ok = "설정됨" if remote.get("token_configured") else "미설정"
     st.markdown(
-        f"- 대상 디렉터리: `{ETF_DATA_DIR.resolve()}`  \n"
-        f"- 섹터 JSON 파일: **{file_count}**개"
+        f"- 로컬 디렉터리: `{ETF_DATA_DIR.resolve()}`  \n"
+        f"- 섹터 JSON 파일: **{file_count}**개  \n"
+        f"- GitHub 저장소: **{repo}**"
+        + (f" ([열기]({web}))" if web else "")
+        + f" · branch `{remote.get('branch')}` · token **{token_ok}**"
     )
     render_data_update_panel()
