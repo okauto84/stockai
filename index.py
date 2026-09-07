@@ -1,10 +1,61 @@
+import os
+
 import streamlit as st
 import streamlit.components.v1 as components
 
 PAGE_DATA_UPDATE = "Data update"
 PAGE_ETF = "ETF 추세확인"
 PAGE_STOCK = "개별 종목 분석"
-PAGE_OPTIONS = [PAGE_DATA_UPDATE, PAGE_ETF, PAGE_STOCK]
+PAGE_OPTIONS = [PAGE_ETF, PAGE_STOCK, PAGE_DATA_UPDATE]
+SESSION_DATA_UPDATE_OK = "data_update_authenticated"
+
+
+def get_data_update_secret() -> str:
+    """환경변수·st.secrets에서 DATA_UPDATE 조회"""
+    value = os.environ.get("DATA_UPDATE", "").strip()
+    if value:
+        return value
+    try:
+        secret = st.secrets.get("DATA_UPDATE", "")
+    except Exception:
+        return ""
+    if secret is None:
+        return ""
+    return str(secret).strip()
+
+
+@st.dialog("관리자 인증")
+def prompt_data_update_auth() -> None:
+    """Data update 탭 진입 시 관리자 번호 입력 알람창"""
+    st.write("Data update를 실행하려면 관리자 번호를 입력하세요.")
+    admin_no = st.text_input(
+        "관리자 번호",
+        type="password",
+        key="data_update_admin_input",
+        placeholder="관리자 번호 입력",
+    )
+    confirm_col, cancel_col = st.columns(2)
+    with confirm_col:
+        confirmed = st.button("확인", use_container_width=True, type="primary")
+    with cancel_col:
+        cancelled = st.button("취소", use_container_width=True)
+
+    if cancelled:
+        st.session_state[SESSION_DATA_UPDATE_OK] = False
+        st.session_state["_cancel_data_update"] = True
+        st.rerun()
+
+    if not confirmed:
+        return
+
+    expected = get_data_update_secret()
+    if not expected:
+        st.error("DATA_UPDATE가 설정되어 있지 않습니다. 환경변수 또는 secrets를 확인하세요.")
+        return
+    if admin_no.strip() == expected:
+        st.session_state[SESSION_DATA_UPDATE_OK] = True
+        st.rerun()
+    st.error("관리자 번호가 일치하지 않습니다.")
 
 
 def inject_nav_bridge() -> None:
@@ -178,7 +229,7 @@ def apply_query_navigation() -> None:
 def render_top_bar() -> str:
     """상단 top-bar 탭 메뉴를 렌더하고 선택된 페이지명을 반환"""
     if st.session_state.get("nav_page") not in PAGE_OPTIONS:
-        st.session_state["nav_page"] = PAGE_DATA_UPDATE
+        st.session_state["nav_page"] = PAGE_ETF
 
     brand_col, tab_col = st.columns([1.2, 6])
     with brand_col:
@@ -192,6 +243,15 @@ def render_top_bar() -> str:
             label_visibility="collapsed",
         )
     return page
+
+
+def gate_data_update_page() -> bool:
+    """Data update 탭 인증 게이트. 통과 시에만 True"""
+    if st.session_state.get(SESSION_DATA_UPDATE_OK):
+        return True
+    prompt_data_update_auth()
+    st.info("Data update는 관리자 번호 인증 후 사용할 수 있습니다.")
+    return False
 
 
 def clear_caches_and_reload_stock_list() -> None:
@@ -233,13 +293,22 @@ def main() -> None:
     if "symbol" not in st.session_state:
         st.session_state["symbol"] = ""
 
+    # 인증 취소는 radio 생성 전에 nav_page를 되돌려 위젯 키 충돌을 피함
+    if st.session_state.pop("_cancel_data_update", False):
+        st.session_state["nav_page"] = PAGE_ETF
+
     page = render_top_bar()
     if st.session_state.pop("_goto_stock", False):
         # radio 인스턴스화 이후 session_state[nav_page] 재설정은 금지 → 라우팅만 강제
         page = PAGE_STOCK
 
+    # Data update 탭을 벗어나면 인증 해제 → 다시 진입 시 알람창 재표시
+    if page != PAGE_DATA_UPDATE:
+        st.session_state[SESSION_DATA_UPDATE_OK] = False
+
     if page == PAGE_DATA_UPDATE:
-        ref_dataupdate.render_page()
+        if gate_data_update_page():
+            ref_dataupdate.render_page()
     elif page == PAGE_ETF:
         ref_etf.render_page()
     elif page == PAGE_STOCK:
