@@ -8,7 +8,6 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -24,7 +23,6 @@ API_SLEEP_SECONDS = 1
 SECTOR_FILE_SLEEP_SECONDS = 2
 KOSPI_SYMBOL = "^KS11"
 GRID_COLUMNS = list(ref_stockanly.GRID_COLUMNS)
-CHART_HEIGHT = 360
 
 
 def sector_to_filename(sector: str) -> str:
@@ -138,21 +136,17 @@ def _name_chips_html(etfs: list[dict[str, str]], sector: str) -> str:
     return "".join(_stock_chip(etf, sector) for etf in etfs)
 
 
-def _sector_toggle_cell_html(
-    sector: str, expand_id: str, *, open_sector: str | None
-) -> str:
-    """섹터명 클릭 토글 셀 (목록은 아래 전체 행에서 표시)"""
+def _sector_toggle_cell_html(sector: str, expand_id: str) -> str:
+    """섹터명 클릭 토글 셀 (목록·차트는 아래 전체 행에서 표시)"""
     if not sector:
         return '<td class="sector"></td>'
 
-    is_open = bool(open_sector) and sector == open_sector
-    expanded = "true" if is_open else "false"
     return (
         f'<td class="sector">'
         f'<button type="button" class="sector-toggle" '
         f'data-expand="{html.escape(expand_id, quote=True)}" '
         f'data-sector="{html.escape(sector, quote=True)}" '
-        f'aria-expanded="{expanded}">'
+        f'aria-expanded="false">'
         f"{html.escape(sector)}"
         f"</button>"
         f"</td>"
@@ -173,34 +167,227 @@ def _chips_from_payload(payload: dict, sector: str) -> list[dict[str, str]]:
     return chips
 
 
+def build_normalized_close_chart_df(payload: dict) -> pd.DataFrame:
+    """모든 ETF 종가를 종목별 0~1000으로 정규화한 long DataFrame"""
+    rows: list[dict] = []
+    for item in payload.get("items", []):
+        name = str(item.get("name", "")).strip() or str(item.get("yahoosymbol", ""))
+        grid = item.get("grid") or []
+        if not grid:
+            continue
+        frame = pd.DataFrame(grid)
+        if "날짜" not in frame.columns or "종가" not in frame.columns:
+            continue
+        frame = frame[["날짜", "종가"]].copy()
+        frame["종가"] = pd.to_numeric(frame["종가"], errors="coerce")
+        frame = frame.dropna(subset=["날짜", "종가"])
+        if frame.empty:
+            continue
+        lo = float(frame["종가"].min())
+        hi = float(frame["종가"].max())
+        if hi == lo:
+            frame["종가_정규화"] = 500.0
+        else:
+            frame["종가_정규화"] = (frame["종가"] - lo) / (hi - lo) * 1000.0
+        frame["ETF"] = name
+        rows.extend(
+            frame[["날짜", "ETF", "종가_정규화"]].to_dict(orient="records")
+        )
+
+    if not rows:
+        return pd.DataFrame(columns=["날짜", "ETF", "종가_정규화", "date"])
+
+    chart_df = pd.DataFrame(rows)
+    chart_df["date"] = pd.to_datetime(chart_df["날짜"])
+    return chart_df.sort_values(["ETF", "date"]).reset_index(drop=True)
+
+
+_CHART_COLORS = [
+    "#2563eb",
+    "#dc2626",
+    "#16a34a",
+    "#ca8a04",
+    "#9333ea",
+    "#0891b2",
+    "#ea580c",
+    "#4f46e5",
+    "#db2777",
+    "#059669",
+    "#7c3aed",
+    "#0284c7",
+]
+
+
+def normalized_close_chart_svg(
+    payload: dict,
+    *,
+    width: int = 860,
+    height: int = 320,
+) -> str:
+    """정규화 종가 라인 차트 SVG (markdown에 스크립트 없이 삽입 가능)"""
+    chart_df = build_normalized_close_chart_df(payload)
+    if chart_df.empty:
+        return '<p class="chart-empty">차트에 표시할 종가 데이터가 없습니다.</p>'
+
+    left, right, top, bottom = 46, 12, 12, 34
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    dates = sorted(chart_df["date"].dropna().unique())
+    if not dates:
+        return '<p class="chart-empty">차트에 표시할 종가 데이터가 없습니다.</p>'
+
+    denom = max(len(dates) - 1, 1)
+    x_of = {
+        pd.Timestamp(d): left + (idx / denom) * plot_w for idx, d in enumerate(dates)
+    }
+    etfs = list(dict.fromkeys(chart_df["ETF"].tolist()))
+
+    polylines: list[str] = []
+    legend_items: list[str] = []
+    for idx, etf in enumerate(etfs):
+        color = _CHART_COLORS[idx % len(_CHART_COLORS)]
+        sub = chart_df[chart_df["ETF"] == etf].sort_values("date")
+        points: list[str] = []
+        for _, row in sub.iterrows():
+            x = x_of.get(pd.Timestamp(row["date"]))
+            if x is None:
+                continue
+            y_val = float(row["종가_정규화"])
+            y = top + plot_h * (1.0 - (y_val / 1000.0))
+            points.append(f"{x:.2f},{y:.2f}")
+        if len(points) < 2:
+            continue
+        polylines.append(
+            f'<polyline fill="none" stroke="{color}" stroke-width="1.4" '
+            f'points="{" ".join(points)}" />'
+        )
+        legend_items.append(
+            f'<span class="chart-legend-item">'
+            f'<i style="background:{color}"></i>'
+            f"{html.escape(str(etf))}"
+            f"</span>"
+        )
+
+    # X축 눈금 (최대 6개)
+    tick_idx = sorted(
+        {
+            0,
+            len(dates) - 1,
+            *[round(i * (len(dates) - 1) / 5) for i in range(1, 5)],
+        }
+    )
+    x_ticks: list[str] = []
+    for i in tick_idx:
+        d = pd.Timestamp(dates[i])
+        x = x_of[d]
+        label = d.strftime("%m.%d")
+        x_ticks.append(
+            f'<line x1="{x:.2f}" y1="{top + plot_h}" x2="{x:.2f}" '
+            f'y2="{top + plot_h + 4}" stroke="#94a3b8" />'
+            f'<text x="{x:.2f}" y="{height - 8}" text-anchor="middle" '
+            f'font-size="10" fill="#64748b">{label}</text>'
+        )
+
+    y_ticks: list[str] = []
+    for value in (0, 250, 500, 750, 1000):
+        y = top + plot_h * (1.0 - value / 1000.0)
+        y_ticks.append(
+            f'<line x1="{left}" y1="{y:.2f}" x2="{left + plot_w}" '
+            f'y2="{y:.2f}" stroke="#e2e8f0" stroke-width="1" />'
+            f'<text x="{left - 6}" y="{y + 3:.2f}" text-anchor="end" '
+            f'font-size="10" fill="#64748b">{value}</text>'
+        )
+
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+        f'width="100%" height="auto" class="etf-norm-svg" role="img" '
+        f'aria-label="종가 정규화 차트">'
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#fff" />'
+        f'<text x="8" y="14" font-size="11" fill="#64748b">종가</text>'
+        f"{''.join(y_ticks)}"
+        f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}" '
+        f'stroke="#94a3b8" />'
+        f'<line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" '
+        f'y2="{top + plot_h}" stroke="#94a3b8" />'
+        f"{''.join(polylines)}"
+        f"{''.join(x_ticks)}"
+        f'<text x="{left + plot_w / 2:.1f}" y="{height - 2}" '
+        f'text-anchor="middle" font-size="11" fill="#64748b">날짜</text>'
+        f"</svg>"
+    )
+    legend = (
+        f'<div class="etf-chart-legend">{"".join(legend_items)}</div>'
+        if legend_items
+        else ""
+    )
+    return (
+        f'<div class="etf-chart-wrap">'
+        f'<div class="etf-chart-title">종가 정규화 (0~1000) · X=날짜 · Y=종가</div>'
+        f'<div class="etf-chart-body">{svg}{legend}</div>'
+        f"</div>"
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _cached_sector_expand_content(sector: str, mtime: float) -> tuple[str, str]:
+    """섹터 JSON 기준 칩 HTML·차트 SVG 캐시 (mtime으로 무효화)"""
+    del mtime  # cache key only
+    try:
+        payload = load_sector_payload(sector)
+    except FileNotFoundError:
+        return (
+            '<span class="empty-msg">섹터 JSON 파일이 없습니다.</span>',
+            '<p class="chart-empty">data/etf 섹터 JSON이 없습니다.</p>',
+        )
+    except Exception as exc:
+        msg = html.escape(str(exc))
+        return (
+            f'<span class="empty-msg">JSON 로드 오류: {msg}</span>',
+            f'<p class="chart-empty">차트 생성 실패: {msg}</p>',
+        )
+
+    chips = _name_chips_html(_chips_from_payload(payload, sector), sector)
+    chart = normalized_close_chart_svg(payload)
+    return chips, chart
+
+
+def _sector_expand_content(sector: str) -> tuple[str, str]:
+    """섹터 펼침 영역용 칩·차트 HTML"""
+    path = sector_json_path(sector)
+    mtime = path.stat().st_mtime if path.exists() else 0.0
+    return _cached_sector_expand_content(sector, mtime)
+
+
 def _sector_expand_row_html(
     sector: str,
     expand_id: str,
     sector_etfs: dict[str, list[dict[str, str]]],
-    *,
-    open_sector: str | None,
-    open_payload: dict | None,
 ) -> str:
-    """섹터 클릭 시 그리드 한 줄(row) 전체를 차지하는 ETF 목록 행"""
+    """섹터 클릭 시 한 줄(row)에 ETF 목록 + 정규화 차트를 표시"""
     if not sector:
         return ""
 
-    is_open = bool(open_sector) and sector == open_sector
-    if is_open and open_payload:
-        etfs = _chips_from_payload(open_payload, sector)
+    path = sector_json_path(sector)
+    if path.exists():
+        chips_html, chart_html = _sector_expand_content(sector)
     else:
-        etfs = sector_etfs.get(sector, [])
+        chips_html = _name_chips_html(sector_etfs.get(sector, []), sector)
+        chart_html = (
+            f'<div class="etf-chart-wrap">'
+            f'<p class="chart-empty">섹터 JSON 없음: '
+            f"{html.escape(path.name)}</p></div>"
+        )
 
-    hidden_attr = "" if is_open else " hidden"
     return (
         f'<tr id="{html.escape(expand_id, quote=True)}" '
-        f'class="etf-expand-row"{hidden_attr}>'
+        f'class="etf-expand-row" hidden>'
         f'<td colspan="4" class="expand-cell">'
         f'<div class="detail-wrap">'
         f'<div class="detail-title">'
         f"{html.escape(sector)} 종목 · 클릭 시 개별 분석"
         f"</div>"
-        f'<div class="chip-row">{_name_chips_html(etfs, sector)}</div>'
+        f'<div class="chip-row">{chips_html}</div>'
+        f"{chart_html}"
         f"</div>"
         f"</td>"
         f"</tr>"
@@ -210,11 +397,8 @@ def _sector_expand_row_html(
 def build_sector_grid_html(
     grid_rows: list[dict],
     sector_etfs: dict[str, list[dict[str, str]]],
-    *,
-    open_sector: str | None = None,
-    open_payload: dict | None = None,
 ) -> str:
-    """HTML 섹터 그리드 (섹터 클릭 시 전체 행으로 종목 목록 펼침)"""
+    """HTML 섹터 그리드 (섹터 클릭 시 종목 목록·차트를 같은 펼침 행에 표시)"""
     body_rows: list[str] = []
     for row_idx, row in enumerate(grid_rows):
         left_sector = row["left_sector"]
@@ -237,29 +421,17 @@ def build_sector_grid_html(
 
         body_rows.append(
             '<tr class="pair-row">'
-            f"{_sector_toggle_cell_html(left_sector, left_expand_id, open_sector=open_sector)}"
+            f"{_sector_toggle_cell_html(left_sector, left_expand_id)}"
             f"{left_count_cell}"
-            f"{_sector_toggle_cell_html(right_sector, right_expand_id, open_sector=open_sector)}"
+            f"{_sector_toggle_cell_html(right_sector, right_expand_id)}"
             f"{right_count_cell}"
             "</tr>"
         )
         body_rows.append(
-            _sector_expand_row_html(
-                left_sector,
-                left_expand_id,
-                sector_etfs,
-                open_sector=open_sector,
-                open_payload=open_payload,
-            )
+            _sector_expand_row_html(left_sector, left_expand_id, sector_etfs)
         )
         body_rows.append(
-            _sector_expand_row_html(
-                right_sector,
-                right_expand_id,
-                sector_etfs,
-                open_sector=open_sector,
-                open_payload=open_payload,
-            )
+            _sector_expand_row_html(right_sector, right_expand_id, sector_etfs)
         )
 
     return f"""
@@ -358,9 +530,53 @@ def build_sector_grid_html(
     background: #dbeafe;
     border-color: #93c5fd;
   }}
-  .empty-msg {{
+  .empty-msg, .chart-empty {{
     color: #64748b;
     font-size: 10px;
+  }}
+  .etf-chart-wrap {{
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+  }}
+  .etf-chart-title {{
+    font-size: 11px;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+  }}
+  .etf-chart-body {{
+    width: 100%;
+  }}
+  .etf-norm-svg {{
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+  }}
+  .etf-chart-legend {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-top: 8px;
+    max-height: 120px;
+    overflow-y: auto;
+  }}
+  .chart-legend-item {{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    color: #334155;
+    white-space: nowrap;
+  }}
+  .chart-legend-item i {{
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
   }}
 </style>
 <div class="etf-sector-grid-wrap">
@@ -669,8 +885,9 @@ def update_all_sector_json_files() -> dict:
     file_progress.empty()
     status.empty()
 
-    # 선택 섹터 캐시 무효화 (일괄 갱신 반영)
+    # 선택 섹터·차트 캐시 무효화 (일괄 갱신 반영)
     st.session_state.pop("etf_sector_payload", None)
+    _cached_sector_expand_content.clear()
 
     return summary
 
@@ -680,19 +897,17 @@ def render_data_update_button() -> None:
     btn_col, info_col = st.columns([1.2, 6])
     with btn_col:
         clicked = st.button(
-            "data update",
+            "Data update",
             use_container_width=True,
             help=(
                 f"data/etf/*.json 전체 갱신 · "
-                f"최근 {UPDATE_LOOKBACK_DAYS}일 이내는 API 생략 · "
-                f"파일 간 {SECTOR_FILE_SLEEP_SECONDS}초 대기"
+                f"최근 {UPDATE_LOOKBACK_DAYS}일 이내는 API 생략"
             ),
         )
     with info_col:
         st.caption(
             "data update: 모든 섹터 JSON을 API로 갱신·저장 "
-            f"(최근 {UPDATE_LOOKBACK_DAYS}일 이내 스킵 · "
-            f"파일 간 sleep {SECTOR_FILE_SLEEP_SECONDS}초)"
+            f"(최근 {UPDATE_LOOKBACK_DAYS}일 이내 스킵)"
         )
 
     if not clicked:
@@ -710,129 +925,8 @@ def render_data_update_button() -> None:
     )
 
 
-def build_normalized_close_chart_df(payload: dict) -> pd.DataFrame:
-    """모든 ETF 종가를 종목별 0~1000으로 정규화한 long DataFrame"""
-    rows: list[dict] = []
-    for item in payload.get("items", []):
-        name = str(item.get("name", "")).strip() or str(item.get("yahoosymbol", ""))
-        grid = item.get("grid") or []
-        if not grid:
-            continue
-        frame = pd.DataFrame(grid)
-        if "날짜" not in frame.columns or "종가" not in frame.columns:
-            continue
-        frame = frame[["날짜", "종가"]].copy()
-        frame["종가"] = pd.to_numeric(frame["종가"], errors="coerce")
-        frame = frame.dropna(subset=["날짜", "종가"])
-        if frame.empty:
-            continue
-        lo = float(frame["종가"].min())
-        hi = float(frame["종가"].max())
-        if hi == lo:
-            frame["종가_정규화"] = 500.0
-        else:
-            frame["종가_정규화"] = (frame["종가"] - lo) / (hi - lo) * 1000.0
-        frame["ETF"] = name
-        rows.extend(
-            frame[["날짜", "ETF", "종가_정규화"]].to_dict(orient="records")
-        )
-
-    if not rows:
-        return pd.DataFrame(columns=["날짜", "ETF", "종가_정규화", "date"])
-
-    chart_df = pd.DataFrame(rows)
-    chart_df["date"] = pd.to_datetime(chart_df["날짜"])
-    return chart_df.sort_values(["ETF", "date"]).reset_index(drop=True)
-
-
-def render_normalized_close_chart(payload: dict, sector: str) -> None:
-    """정규화 종가 라인 차트 (X=날짜, Y=종가 0~1000)"""
-    chart_df = build_normalized_close_chart_df(payload)
-    if chart_df.empty:
-        st.info("차트에 표시할 종가 데이터가 없습니다.")
-        return
-
-    st.markdown(f"#### {html.escape(sector)} · 종가 정규화(0~1000) 추이")
-    st.caption(
-        "섹터 JSON 기준 · ETF 종가 종목별 0~1000 정규화 · "
-        "X축 날짜 · Y축 종가"
-    )
-
-    chart = (
-        alt.Chart(chart_df)
-        .mark_line(strokeWidth=1.5)
-        .encode(
-            x=alt.X("date:T", title="날짜", axis=alt.Axis(format="%m.%d")),
-            y=alt.Y(
-                "종가_정규화:Q",
-                title="종가",
-                scale=alt.Scale(domain=[0, 1000]),
-            ),
-            color=alt.Color("ETF:N", legend=alt.Legend(title="ETF", orient="bottom")),
-            tooltip=[
-                alt.Tooltip("날짜:N", title="날짜"),
-                alt.Tooltip("ETF:N", title="ETF"),
-                alt.Tooltip("종가_정규화:Q", title="종가", format=".1f"),
-            ],
-        )
-        .properties(height=CHART_HEIGHT)
-        .interactive(bind_y=False)
-    )
-    st.altair_chart(chart, use_container_width=True)
-
-
-def _clear_query_keys(*keys: str) -> None:
-    """쿼리 파라미터 키 제거"""
-    for key in keys:
-        if key in st.query_params:
-            del st.query_params[key]
-
-
-def consume_sector_query() -> None:
-    """섹터 클릭 쿼리 파라미터를 세션 상태로 반영"""
-    if str(st.query_params.get("etf_sector_clear", "")).strip() in {"1", "true", "True"}:
-        st.session_state.pop("etf_selected_sector", None)
-        st.session_state.pop("etf_sector_payload", None)
-        _clear_query_keys("etf_sector_clear", "etf_sector")
-        return
-
-    sector = str(st.query_params.get("etf_sector", "")).strip()
-    if not sector:
-        return
-
-    st.session_state["etf_selected_sector"] = sector
-    # 섹터 변경 시 캐시된 payload 무효화 → JSON 재로드
-    cached = st.session_state.get("etf_sector_payload")
-    if not isinstance(cached, dict) or cached.get("sector") != sector:
-        st.session_state.pop("etf_sector_payload", None)
-    _clear_query_keys("etf_sector", "etf_sector_clear")
-
-
-def ensure_selected_sector_payload() -> dict | None:
-    """선택된 섹터 JSON만 읽어 payload 반환 (API 갱신 없음)"""
-    sector = st.session_state.get("etf_selected_sector")
-    if not sector:
-        return None
-
-    cached = st.session_state.get("etf_sector_payload")
-    if isinstance(cached, dict) and cached.get("sector") == sector:
-        return cached
-
-    try:
-        payload = load_sector_payload(sector)
-    except FileNotFoundError as exc:
-        st.warning(str(exc))
-        return None
-    except Exception as exc:
-        st.error(f"섹터 JSON 로드 오류: {exc}")
-        return None
-
-    st.session_state["etf_sector_payload"] = payload
-    return payload
-
-
 def install_same_window_chip_navigation() -> None:
-    """섹터 선택(쿼리) + 종목 칩 동일 창 이동 핸들러 설치"""
+    """섹터 펼침(페이지 리로드 없음) + 종목 칩 동일 창 이동 핸들러"""
     components.html(
         """
         <script>
@@ -841,32 +935,38 @@ def install_same_window_chip_navigation() -> None:
           const script = parentDoc.createElement('script');
           script.textContent = `
             (function () {
-              if (window.__etfGridHandlersInstalledV2) return;
-              window.__etfGridHandlersInstalledV2 = true;
+              if (window.__etfGridHandlersInstalledV3) return;
+              window.__etfGridHandlersInstalledV3 = true;
+
+              function closeAllExpands(exceptId) {
+                document.querySelectorAll('tr.etf-expand-row').forEach(function (row) {
+                  if (exceptId && row.id === exceptId) return;
+                  row.hidden = true;
+                });
+                document.querySelectorAll('button.sector-toggle[aria-expanded="true"]')
+                  .forEach(function (btn) {
+                    if (exceptId && btn.getAttribute('data-expand') === exceptId) return;
+                    btn.setAttribute('aria-expanded', 'false');
+                  });
+              }
 
               function bindSectorToggles(root) {
-                root.querySelectorAll('button.sector-toggle[data-sector]').forEach(function (btn) {
+                root.querySelectorAll('button.sector-toggle[data-expand]').forEach(function (btn) {
                   if (btn.dataset.toggleBound === '1') return;
                   btn.dataset.toggleBound = '1';
                   btn.addEventListener('click', function (e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    const sector = btn.getAttribute('data-sector') || '';
-                    if (!sector) return;
-                    const url = new URL(window.location.href);
-                    const current = url.searchParams.get('etf_sector') || '';
-                    const selected = btn.getAttribute('aria-expanded') === 'true';
-                    url.searchParams.delete('goto');
-                    url.searchParams.delete('symbol');
-                    url.searchParams.delete('keyword');
-                    if (selected || current === sector) {
-                      url.searchParams.delete('etf_sector');
-                      url.searchParams.set('etf_sector_clear', '1');
-                    } else {
-                      url.searchParams.delete('etf_sector_clear');
-                      url.searchParams.set('etf_sector', sector);
+                    const expandId = btn.getAttribute('data-expand') || '';
+                    const row = expandId ? document.getElementById(expandId) : null;
+                    if (!row) return;
+                    const willOpen = row.hidden;
+                    closeAllExpands(willOpen ? expandId : null);
+                    row.hidden = !willOpen;
+                    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+                    if (willOpen) {
+                      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
-                    window.location.assign(url.toString());
                   });
                 });
               }
@@ -923,7 +1023,7 @@ def install_same_window_chip_navigation() -> None:
 
 
 def render_sector_count_grid() -> None:
-    """섹터별 ETF 종목 수 HTML 그리드 + 선택 섹터 차트 표시"""
+    """섹터별 ETF 종목 수 HTML 그리드 (펼침 행에 종목·차트 포함)"""
     if not KOSPI_LIST_FILE.exists():
         st.warning(f"종목 목록 파일을 찾을 수 없습니다: {KOSPI_LIST_FILE}")
         return
@@ -943,31 +1043,16 @@ def render_sector_count_grid() -> None:
 
     render_data_update_button()
 
-    consume_sector_query()
-    open_sector = st.session_state.get("etf_selected_sector")
-    open_payload = ensure_selected_sector_payload() if open_sector else None
-
     grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
     total_etf = int(sector_df["수"].sum())
     st.caption(
         f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · "
-        f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행 · "
-        "섹터 클릭 시 JSON 로드·종목 목록·정규화 차트 · "
-        "종목 클릭 시 개별 종목 분석"
+        f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행"
     )
-    st.markdown(
-        build_sector_grid_html(
-            grid_rows,
-            sector_etfs,
-            open_sector=open_sector,
-            open_payload=open_payload,
-        ),
-        unsafe_allow_html=True,
-    )
+    with st.spinner("섹터 차트 준비 중..."):
+        grid_html = build_sector_grid_html(grid_rows, sector_etfs)
+    st.markdown(grid_html, unsafe_allow_html=True)
     install_same_window_chip_navigation()
-
-    if open_sector and open_payload:
-        render_normalized_close_chart(open_payload, open_sector)
 
 
 def render_page() -> None:
