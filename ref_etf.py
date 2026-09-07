@@ -501,6 +501,35 @@ def build_sector_grid_html(
 
     return f"""
 <style>
+  .etf-grid-toolbar {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 8px 0;
+  }}
+  .etf-grid-toolbar .etf-expand-all,
+  .etf-grid-toolbar .etf-collapse-all {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #0f172a;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+  }}
+  .etf-grid-toolbar .etf-expand-all:hover,
+  .etf-grid-toolbar .etf-collapse-all:hover {{
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+  }}
   .etf-sector-grid-wrap {{
     width: 100%;
     overflow-x: auto;
@@ -647,6 +676,10 @@ def build_sector_grid_html(
     display: none !important;
   }}
 </style>
+<div class="etf-grid-toolbar">
+  <span class="etf-expand-all" role="button" tabindex="0" title="모두 펼침">+</span>
+  <span class="etf-collapse-all" role="button" tabindex="0" title="모두 접음">−</span>
+</div>
 <div class="etf-sector-grid-wrap">
   <table class="etf-sector-grid">
     <thead>
@@ -692,8 +725,8 @@ def install_same_window_chip_navigation() -> None:
 
           function install(doc) {
             if (!doc || !doc.body) return false;
-            if (doc.documentElement.dataset.etfHandlersV7 === '1') return true;
-            doc.documentElement.dataset.etfHandlersV7 = '1';
+            if (doc.documentElement.dataset.etfHandlersV9 === '1') return true;
+            doc.documentElement.dataset.etfHandlersV9 = '1';
 
             if (!doc.getElementById('etf-chart-tooltip-style')) {
               const style = doc.createElement('style');
@@ -734,6 +767,17 @@ def install_same_window_chip_navigation() -> None:
               doc.querySelectorAll('.sector-toggle[aria-expanded="true"]').forEach(function (btn) {
                 if (exceptId && btn.getAttribute('data-expand') === exceptId) return;
                 btn.setAttribute('aria-expanded', 'false');
+              });
+            }
+
+            function openAllExpands() {
+              doc.querySelectorAll('tr.etf-expand-row[id]').forEach(function (row) {
+                row.classList.add('is-open');
+              });
+              doc.querySelectorAll('.sector-toggle[data-expand]').forEach(function (btn) {
+                const expandId = btn.getAttribute('data-expand') || '';
+                if (!expandId || !doc.getElementById(expandId)) return;
+                btn.setAttribute('aria-expanded', 'true');
               });
             }
 
@@ -778,9 +822,24 @@ def install_same_window_chip_navigation() -> None:
             doc.addEventListener('click', function (e) {
               const raw = e.target;
               const el = raw && raw.nodeType === 3 ? raw.parentElement : raw;
-              const toggle = el && el.closest
-                ? el.closest('.sector-toggle[data-expand]')
-                : null;
+              if (!el || !el.closest) return;
+
+              const expandAll = el.closest('.etf-expand-all');
+              if (expandAll) {
+                e.preventDefault();
+                e.stopPropagation();
+                openAllExpands();
+                return;
+              }
+              const collapseAll = el.closest('.etf-collapse-all');
+              if (collapseAll) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeAllExpands(null);
+                return;
+              }
+
+              const toggle = el.closest('.sector-toggle[data-expand]');
               if (toggle) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -788,9 +847,7 @@ def install_same_window_chip_navigation() -> None:
                 return;
               }
 
-              const chip = el && el.closest
-                ? el.closest('a.name-chip, span.name-chip[data-symbol]')
-                : null;
+              const chip = el.closest('a.name-chip, span.name-chip[data-symbol]');
               if (!chip) return;
               e.preventDefault();
               e.stopPropagation();
@@ -799,21 +856,62 @@ def install_same_window_chip_navigation() -> None:
 
             doc.addEventListener('keydown', function (e) {
               if (e.key !== 'Enter' && e.key !== ' ') return;
-              const toggle = e.target && e.target.closest
-                ? e.target.closest('.sector-toggle[data-expand]')
-                : null;
+              const target = e.target;
+              if (!target || !target.closest) return;
+
+              const expandAll = target.closest('.etf-expand-all');
+              if (expandAll) {
+                e.preventDefault();
+                openAllExpands();
+                return;
+              }
+              const collapseAll = target.closest('.etf-collapse-all');
+              if (collapseAll) {
+                e.preventDefault();
+                closeAllExpands(null);
+                return;
+              }
+
+              const toggle = target.closest('.sector-toggle[data-expand]');
               if (toggle) {
                 e.preventDefault();
                 toggleSector(toggle);
                 return;
               }
-              const chip = e.target && e.target.closest
-                ? e.target.closest('a.name-chip, span.name-chip[data-symbol]')
-                : null;
+              const chip = target.closest('a.name-chip, span.name-chip[data-symbol]');
               if (!chip) return;
               e.preventDefault();
               navigateChip(chip);
             }, true);
+
+            function positionTooltip(tip, clientX, clientY) {
+              const pad = 8;
+              const offset = 14;
+              tip.style.display = 'block';
+              tip.style.left = '0px';
+              tip.style.top = '0px';
+              const rect = tip.getBoundingClientRect();
+              const vw = parentWin.innerWidth || doc.documentElement.clientWidth || 0;
+              const vh = parentWin.innerHeight || doc.documentElement.clientHeight || 0;
+              let left = clientX + offset;
+              let top = clientY + offset;
+              if (left + rect.width + pad > vw) {
+                left = clientX - rect.width - offset;
+              }
+              if (top + rect.height + pad > vh) {
+                top = clientY - rect.height - offset;
+              }
+              if (left < pad) left = pad;
+              if (top < pad) top = pad;
+              if (left + rect.width + pad > vw) {
+                left = Math.max(pad, vw - rect.width - pad);
+              }
+              if (top + rect.height + pad > vh) {
+                top = Math.max(pad, vh - rect.height - pad);
+              }
+              tip.style.left = left + 'px';
+              tip.style.top = top + 'px';
+            }
 
             const tip = ensureTooltip();
             doc.addEventListener('mousemove', function (e) {
@@ -835,9 +933,7 @@ def install_same_window_chip_navigation() -> None:
                 '<div class="tip-row"><span class="tip-label">종목</span><span>' + name + '</span></div>' +
                 '<div class="tip-row"><span class="tip-label">정규화</span><span>' + value + '</span></div>' +
                 '</div></div>';
-              tip.style.display = 'block';
-              tip.style.left = (e.clientX + 14) + 'px';
-              tip.style.top = (e.clientY + 14) + 'px';
+              positionTooltip(tip, e.clientX, e.clientY);
               pt.setAttribute('fill', color);
               pt.setAttribute('fill-opacity', '0.35');
               pt.setAttribute('stroke', color);
