@@ -106,25 +106,44 @@ def _name_chips_html(etfs: list[dict[str, str]], sector: str) -> str:
     return "".join(_stock_chip(etf, sector) for etf in etfs)
 
 
-def _sector_cell_html(
-    sector: str,
-    sector_etfs: dict[str, list[dict[str, str]]],
-) -> str:
-    """섹터 클릭(details) 시 하단에 종목 칩 목록이 펼쳐지는 셀"""
+def _sector_toggle_cell_html(sector: str, expand_id: str) -> str:
+    """섹터명 클릭 토글 셀 (목록은 아래 전체 행에서 표시)"""
     if not sector:
         return '<td class="sector"></td>'
 
-    etfs = sector_etfs.get(sector, [])
     return (
         f'<td class="sector">'
-        f"<details>"
-        f"<summary>{html.escape(sector)}</summary>"
+        f'<button type="button" class="sector-toggle" '
+        f'data-expand="{html.escape(expand_id, quote=True)}" '
+        f'aria-expanded="false">'
+        f"{html.escape(sector)}"
+        f"</button>"
+        f"</td>"
+    )
+
+
+def _sector_expand_row_html(
+    sector: str,
+    expand_id: str,
+    sector_etfs: dict[str, list[dict[str, str]]],
+) -> str:
+    """섹터 클릭 시 그리드 한 줄(row) 전체를 차지하는 ETF 목록 행"""
+    if not sector:
+        return ""
+
+    etfs = sector_etfs.get(sector, [])
+    return (
+        f'<tr id="{html.escape(expand_id, quote=True)}" '
+        f'class="etf-expand-row" hidden>'
+        f'<td colspan="4" class="expand-cell">'
         f'<div class="detail-wrap">'
-        f'<div class="detail-title">{html.escape(sector)} 종목 · 클릭 시 개별 분석</div>'
+        f'<div class="detail-title">'
+        f"{html.escape(sector)} 종목 · 클릭 시 개별 분석"
+        f"</div>"
         f'<div class="chip-row">{_name_chips_html(etfs, sector)}</div>'
         f"</div>"
-        f"</details>"
         f"</td>"
+        f"</tr>"
     )
 
 
@@ -132,13 +151,15 @@ def build_sector_grid_html(
     grid_rows: list[dict],
     sector_etfs: dict[str, list[dict[str, str]]],
 ) -> str:
-    """HTML 섹터 그리드 (섹터 클릭 펼침 + 종목 링크)"""
+    """HTML 섹터 그리드 (섹터 클릭 시 전체 행으로 종목 목록 펼침)"""
     body_rows: list[str] = []
-    for row in grid_rows:
+    for row_idx, row in enumerate(grid_rows):
         left_sector = row["left_sector"]
         left_count = row["left_count"]
         right_sector = row["right_sector"]
         right_count = row["right_count"]
+        left_expand_id = f"etf-exp-{row_idx}-L"
+        right_expand_id = f"etf-exp-{row_idx}-R"
 
         left_count_cell = (
             f'<td class="count">{left_count}</td>'
@@ -152,12 +173,18 @@ def build_sector_grid_html(
         )
 
         body_rows.append(
-            "<tr>"
-            f"{_sector_cell_html(left_sector, sector_etfs)}"
+            "<tr class=\"pair-row\">"
+            f"{_sector_toggle_cell_html(left_sector, left_expand_id)}"
             f"{left_count_cell}"
-            f"{_sector_cell_html(right_sector, sector_etfs)}"
+            f"{_sector_toggle_cell_html(right_sector, right_expand_id)}"
             f"{right_count_cell}"
             "</tr>"
+        )
+        body_rows.append(
+            _sector_expand_row_html(left_sector, left_expand_id, sector_etfs)
+        )
+        body_rows.append(
+            _sector_expand_row_html(right_sector, right_expand_id, sector_etfs)
         )
 
     return f"""
@@ -196,28 +223,35 @@ def build_sector_grid_html(
     width: 16%;
     vertical-align: middle;
   }}
-  table.etf-sector-grid details > summary {{
-    cursor: pointer;
-    list-style: none;
+  table.etf-sector-grid button.sector-toggle {{
+    display: inline;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
     font-weight: 600;
+    cursor: pointer;
+    text-align: left;
     user-select: none;
   }}
-  table.etf-sector-grid details > summary::-webkit-details-marker {{
-    display: none;
-  }}
-  table.etf-sector-grid details > summary::before {{
+  table.etf-sector-grid button.sector-toggle::before {{
     content: "▸ ";
     color: #64748b;
   }}
-  table.etf-sector-grid details[open] > summary::before {{
+  table.etf-sector-grid button.sector-toggle[aria-expanded="true"] {{
+    color: #2563eb;
+  }}
+  table.etf-sector-grid button.sector-toggle[aria-expanded="true"]::before {{
     content: "▾ ";
   }}
-  table.etf-sector-grid details[open] > summary {{
-    color: #2563eb;
-    margin-bottom: 6px;
+  table.etf-sector-grid tr.etf-expand-row td.expand-cell {{
+    background: #f8fafc;
+    padding: 10px 12px 12px;
   }}
   .detail-wrap {{
-    padding: 4px 0 2px;
+    padding: 2px 0;
   }}
   .detail-title {{
     font-size: 10px;
@@ -236,7 +270,7 @@ def build_sector_grid_html(
     padding: 5px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
-    background: #f8fafc;
+    background: #fff;
     color: #0f172a !important;
     text-decoration: none !important;
     white-space: nowrap;
@@ -273,7 +307,7 @@ def build_sector_grid_html(
 
 
 def install_same_window_chip_navigation() -> None:
-    """종목 칩 클릭을 동일 창 내 쿼리 이동으로 처리 (새 창 방지)"""
+    """섹터 펼침 + 종목 칩 동일 창 이동 핸들러 설치"""
     components.html(
         """
         <script>
@@ -281,48 +315,44 @@ def install_same_window_chip_navigation() -> None:
           const parentWin = window.parent;
           const parentDoc = parentWin.document;
 
-          function bindChips(root) {
-            root.querySelectorAll('span.name-chip[data-symbol]').forEach(function (chip) {
-              if (chip.dataset.navBound === '1') return;
-              chip.dataset.navBound = '1';
-              chip.style.cursor = 'pointer';
-
-              function go() {
-                const symbol = chip.getAttribute('data-symbol') || '';
-                const sector = chip.getAttribute('data-sector') || '';
-                const keyword = chip.getAttribute('data-keyword') || '';
-                if (!symbol) return;
-                const url = new URL(parentWin.location.href);
-                url.searchParams.set('goto', 'stock');
-                url.searchParams.set('symbol', symbol);
-                url.searchParams.set('sector', sector);
-                url.searchParams.set('keyword', keyword);
-                parentWin.location.assign(url.toString());
-              }
-
-              chip.addEventListener('click', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                go();
-              }, true);
-
-              chip.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  go();
-                }
-              });
-            });
-          }
-
-          // 부모 문서에서 실행되는 핸들러를 주입해 동일 창 이동을 보장
+          // 부모 문서에서 실행되는 핸들러를 주입해 동일 창 이동·섹터 펼침을 보장
           const script = parentDoc.createElement('script');
           script.textContent = `
             (function () {
-              if (window.__etfChipNavInstalled) return;
-              window.__etfChipNavInstalled = true;
+              if (window.__etfGridHandlersInstalled) return;
+              window.__etfGridHandlersInstalled = true;
 
-              function bind(root) {
+              function closeAllExpands(exceptId) {
+                document.querySelectorAll('tr.etf-expand-row').forEach(function (row) {
+                  if (exceptId && row.id === exceptId) return;
+                  row.hidden = true;
+                });
+                document.querySelectorAll('button.sector-toggle[aria-expanded="true"]')
+                  .forEach(function (btn) {
+                    if (exceptId && btn.getAttribute('data-expand') === exceptId) return;
+                    btn.setAttribute('aria-expanded', 'false');
+                  });
+              }
+
+              function bindSectorToggles(root) {
+                root.querySelectorAll('button.sector-toggle[data-expand]').forEach(function (btn) {
+                  if (btn.dataset.toggleBound === '1') return;
+                  btn.dataset.toggleBound = '1';
+                  btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const expandId = btn.getAttribute('data-expand') || '';
+                    const row = expandId ? document.getElementById(expandId) : null;
+                    if (!row) return;
+                    const willOpen = row.hidden;
+                    closeAllExpands(willOpen ? expandId : null);
+                    row.hidden = !willOpen;
+                    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+                  });
+                });
+              }
+
+              function bindChips(root) {
                 root.querySelectorAll('span.name-chip[data-symbol]').forEach(function (chip) {
                   if (chip.dataset.navBound === '1') return;
                   chip.dataset.navBound = '1';
@@ -353,13 +383,17 @@ def install_same_window_chip_navigation() -> None:
                 });
               }
 
-              bind(document);
-              new MutationObserver(function () { bind(document); })
+              function bindAll() {
+                bindSectorToggles(document);
+                bindChips(document);
+              }
+
+              bindAll();
+              new MutationObserver(function () { bindAll(); })
                 .observe(document.body, { childList: true, subtree: true });
             })();
           `;
           parentDoc.head.appendChild(script);
-          bindChips(parentDoc);
         })();
         </script>
         """,
