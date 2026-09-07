@@ -23,6 +23,8 @@ API_SLEEP_SECONDS = 1
 SECTOR_FILE_SLEEP_SECONDS = 2
 KOSPI_SYMBOL = "^KS11"
 GRID_COLUMNS = list(ref_stockanly.GRID_COLUMNS)
+CHART_LOOKBACK_DAYS = 70
+CHART_X_TICK_COUNT = 14
 
 
 def sector_to_filename(sector: str) -> str:
@@ -116,24 +118,67 @@ def build_sector_grid_rows(
     return rows
 
 
-def _stock_chip(etf: dict[str, str], sector: str) -> str:
+_CHART_COLORS = [
+    "#2563eb",
+    "#dc2626",
+    "#16a34a",
+    "#ca8a04",
+    "#9333ea",
+    "#0891b2",
+    "#ea580c",
+    "#4f46e5",
+    "#db2777",
+    "#059669",
+    "#7c3aed",
+    "#0284c7",
+]
+
+
+def _etf_color_map(names: list[str]) -> dict[str, str]:
+    """ETF 종목명 → 범례/칩/차트 공통 색상"""
+    return {
+        name: _CHART_COLORS[idx % len(_CHART_COLORS)]
+        for idx, name in enumerate(names)
+    }
+
+
+def _stock_chip(
+    etf: dict[str, str],
+    sector: str,
+    *,
+    color: str | None = None,
+) -> str:
     """개별 종목 분석 탭 이동용 칩(동일 창) HTML 생성"""
     name = html.escape(etf["name"])
     symbol = html.escape(etf["yahoosymbol"], quote=True)
     sector_q = html.escape(sector, quote=True)
     keyword = html.escape(etf.get("code") or etf["name"], quote=True)
+    swatch = ""
+    if color:
+        swatch = (
+            f'<i class="chip-swatch" style="background:{html.escape(color, quote=True)}"></i>'
+        )
     return (
         f'<span class="name-chip" role="button" tabindex="0" '
         f'data-symbol="{symbol}" data-sector="{sector_q}" '
-        f'data-keyword="{keyword}" title="{symbol} 분석 보기">{name}</span>'
+        f'data-keyword="{keyword}" title="{symbol} 분석 보기">'
+        f"{swatch}{name}</span>"
     )
 
 
-def _name_chips_html(etfs: list[dict[str, str]], sector: str) -> str:
+def _name_chips_html(
+    etfs: list[dict[str, str]],
+    sector: str,
+    *,
+    color_map: dict[str, str] | None = None,
+) -> str:
     """종목명을 네모박스(칩) HTML로 변환"""
     if not etfs:
         return '<span class="empty-msg">표시할 ETF가 없습니다.</span>'
-    return "".join(_stock_chip(etf, sector) for etf in etfs)
+    colors = color_map or {}
+    return "".join(
+        _stock_chip(etf, sector, color=colors.get(etf["name"])) for etf in etfs
+    )
 
 
 def _sector_toggle_cell_html(sector: str, expand_id: str) -> str:
@@ -167,8 +212,12 @@ def _chips_from_payload(payload: dict, sector: str) -> list[dict[str, str]]:
     return chips
 
 
-def build_normalized_close_chart_df(payload: dict) -> pd.DataFrame:
-    """모든 ETF 종가를 종목별 0~1000으로 정규화한 long DataFrame"""
+def build_normalized_close_chart_df(
+    payload: dict,
+    *,
+    lookback_days: int = CHART_LOOKBACK_DAYS,
+) -> pd.DataFrame:
+    """모든 ETF 종가를 종목별 0~1000으로 정규화 (최근 lookback_days일)"""
     rows: list[dict] = []
     for item in payload.get("items", []):
         name = str(item.get("name", "")).strip() or str(item.get("yahoosymbol", ""))
@@ -183,53 +232,50 @@ def build_normalized_close_chart_df(payload: dict) -> pd.DataFrame:
         frame = frame.dropna(subset=["날짜", "종가"])
         if frame.empty:
             continue
-        lo = float(frame["종가"].min())
-        hi = float(frame["종가"].max())
-        if hi == lo:
-            frame["종가_정규화"] = 500.0
-        else:
-            frame["종가_정규화"] = (frame["종가"] - lo) / (hi - lo) * 1000.0
         frame["ETF"] = name
-        rows.extend(
-            frame[["날짜", "ETF", "종가_정규화"]].to_dict(orient="records")
-        )
+        rows.extend(frame[["날짜", "ETF", "종가"]].to_dict(orient="records"))
 
     if not rows:
         return pd.DataFrame(columns=["날짜", "ETF", "종가_정규화", "date"])
 
     chart_df = pd.DataFrame(rows)
     chart_df["date"] = pd.to_datetime(chart_df["날짜"])
-    return chart_df.sort_values(["ETF", "date"]).reset_index(drop=True)
+    max_date = chart_df["date"].max()
+    cutoff = max_date - pd.Timedelta(days=lookback_days)
+    chart_df = chart_df[chart_df["date"] >= cutoff].copy()
+    if chart_df.empty:
+        return pd.DataFrame(columns=["날짜", "ETF", "종가_정규화", "date"])
 
+    normalized_rows: list[dict] = []
+    for etf_name, group in chart_df.groupby("ETF", sort=False):
+        frame = group.copy()
+        lo = float(frame["종가"].min())
+        hi = float(frame["종가"].max())
+        if hi == lo:
+            frame["종가_정규화"] = 500.0
+        else:
+            frame["종가_정규화"] = (frame["종가"] - lo) / (hi - lo) * 1000.0
+        normalized_rows.extend(
+            frame[["날짜", "ETF", "종가_정규화", "date"]].to_dict(orient="records")
+        )
 
-_CHART_COLORS = [
-    "#2563eb",
-    "#dc2626",
-    "#16a34a",
-    "#ca8a04",
-    "#9333ea",
-    "#0891b2",
-    "#ea580c",
-    "#4f46e5",
-    "#db2777",
-    "#059669",
-    "#7c3aed",
-    "#0284c7",
-]
+    out = pd.DataFrame(normalized_rows)
+    return out.sort_values(["ETF", "date"]).reset_index(drop=True)
 
 
 def normalized_close_chart_svg(
     payload: dict,
     *,
+    color_map: dict[str, str] | None = None,
     width: int = 860,
     height: int = 320,
 ) -> str:
-    """정규화 종가 라인 차트 SVG (markdown에 스크립트 없이 삽입 가능)"""
+    """정규화 종가 라인 차트 SVG (최근 70일, 호버 툴팁용 포인트 포함)"""
     chart_df = build_normalized_close_chart_df(payload)
     if chart_df.empty:
         return '<p class="chart-empty">차트에 표시할 종가 데이터가 없습니다.</p>'
 
-    left, right, top, bottom = 46, 12, 12, 34
+    left, right, top, bottom = 46, 12, 12, 40
     plot_w = width - left - right
     plot_h = height - top - bottom
     dates = sorted(chart_df["date"].dropna().unique())
@@ -241,11 +287,14 @@ def normalized_close_chart_svg(
         pd.Timestamp(d): left + (idx / denom) * plot_w for idx, d in enumerate(dates)
     }
     etfs = list(dict.fromkeys(chart_df["ETF"].tolist()))
+    if color_map is None:
+        color_map = _etf_color_map(sorted(etfs))
 
     polylines: list[str] = []
+    hover_points: list[str] = []
     legend_items: list[str] = []
     for idx, etf in enumerate(etfs):
-        color = _CHART_COLORS[idx % len(_CHART_COLORS)]
+        color = color_map.get(etf) or _CHART_COLORS[idx % len(_CHART_COLORS)]
         sub = chart_df[chart_df["ETF"] == etf].sort_values("date")
         points: list[str] = []
         for _, row in sub.iterrows():
@@ -255,6 +304,18 @@ def normalized_close_chart_svg(
             y_val = float(row["종가_정규화"])
             y = top + plot_h * (1.0 - (y_val / 1000.0))
             points.append(f"{x:.2f},{y:.2f}")
+            date_str = str(row.get("날짜") or pd.Timestamp(row["date"]).strftime("%Y-%m-%d"))
+            tip = html.escape(f"{date_str}\n{etf}\n{y_val:.1f}")
+            hover_points.append(
+                f'<circle class="etf-hover-point" cx="{x:.2f}" cy="{y:.2f}" '
+                f'r="6" fill="transparent" stroke="none" '
+                f'data-date="{html.escape(date_str, quote=True)}" '
+                f'data-name="{html.escape(str(etf), quote=True)}" '
+                f'data-value="{y_val:.1f}" '
+                f'data-color="{html.escape(color, quote=True)}">'
+                f"<title>{tip}</title>"
+                f"</circle>"
+            )
         if len(points) < 2:
             continue
         polylines.append(
@@ -268,14 +329,21 @@ def normalized_close_chart_svg(
             f"</span>"
         )
 
-    # X축 눈금 (최대 6개)
-    tick_idx = sorted(
-        {
-            0,
-            len(dates) - 1,
-            *[round(i * (len(dates) - 1) / 5) for i in range(1, 5)],
-        }
-    )
+    # X축 눈금: 최근 70일 구간에 촘촘히 표시
+    tick_count = min(CHART_X_TICK_COUNT, len(dates))
+    if len(dates) <= 1:
+        tick_idx = [0]
+    else:
+        tick_idx = sorted(
+            {
+                0,
+                len(dates) - 1,
+                *[
+                    round(i * (len(dates) - 1) / (tick_count - 1))
+                    for i in range(1, tick_count - 1)
+                ],
+            }
+        )
     x_ticks: list[str] = []
     for i in tick_idx:
         d = pd.Timestamp(dates[i])
@@ -284,8 +352,8 @@ def normalized_close_chart_svg(
         x_ticks.append(
             f'<line x1="{x:.2f}" y1="{top + plot_h}" x2="{x:.2f}" '
             f'y2="{top + plot_h + 4}" stroke="#94a3b8" />'
-            f'<text x="{x:.2f}" y="{height - 8}" text-anchor="middle" '
-            f'font-size="10" fill="#64748b">{label}</text>'
+            f'<text x="{x:.2f}" y="{height - 10}" text-anchor="middle" '
+            f'font-size="9" fill="#64748b">{label}</text>'
         )
 
     y_ticks: list[str] = []
@@ -310,6 +378,7 @@ def normalized_close_chart_svg(
         f'<line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" '
         f'y2="{top + plot_h}" stroke="#94a3b8" />'
         f"{''.join(polylines)}"
+        f"{''.join(hover_points)}"
         f"{''.join(x_ticks)}"
         f'<text x="{left + plot_w / 2:.1f}" y="{height - 2}" '
         f'text-anchor="middle" font-size="11" fill="#64748b">날짜</text>'
@@ -322,7 +391,7 @@ def normalized_close_chart_svg(
     )
     return (
         f'<div class="etf-chart-wrap">'
-        f'<div class="etf-chart-title">종가 정규화 (0~1000) · X=날짜 · Y=종가</div>'
+        f'<div class="etf-chart-title">종가 정규화 (0~1000) · 최근 {CHART_LOOKBACK_DAYS}일 · X=날짜 · Y=종가</div>'
         f'<div class="etf-chart-body">{svg}{legend}</div>'
         f"</div>"
     )
@@ -346,8 +415,10 @@ def _cached_sector_expand_content(sector: str, mtime: float) -> tuple[str, str]:
             f'<p class="chart-empty">차트 생성 실패: {msg}</p>',
         )
 
-    chips = _name_chips_html(_chips_from_payload(payload, sector), sector)
-    chart = normalized_close_chart_svg(payload)
+    etf_items = _chips_from_payload(payload, sector)
+    color_map = _etf_color_map([item["name"] for item in etf_items])
+    chips = _name_chips_html(etf_items, sector, color_map=color_map)
+    chart = normalized_close_chart_svg(payload, color_map=color_map)
     return chips, chart
 
 
@@ -513,7 +584,9 @@ def build_sector_grid_html(
     align-items: center;
   }}
   span.name-chip {{
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     padding: 5px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
@@ -525,6 +598,13 @@ def build_sector_grid_html(
     font-size: 10px;
     cursor: pointer;
     user-select: none;
+  }}
+  span.name-chip .chip-swatch {{
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: 0 0 auto;
   }}
   span.name-chip:hover {{
     background: #dbeafe;
@@ -547,6 +627,7 @@ def build_sector_grid_html(
   }}
   .etf-chart-body {{
     width: 100%;
+    position: relative;
   }}
   .etf-norm-svg {{
     display: block;
@@ -555,6 +636,9 @@ def build_sector_grid_html(
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
+  }}
+  .etf-hover-point {{
+    cursor: crosshair;
   }}
   .etf-chart-legend {{
     display: flex;
@@ -577,6 +661,36 @@ def build_sector_grid_html(
     width: 10px;
     height: 10px;
     border-radius: 2px;
+  }}
+  .etf-chart-tooltip {{
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    display: none;
+    min-width: 140px;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.92);
+    color: #f8fafc;
+    font-size: 11px;
+    line-height: 1.45;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+  }}
+  .etf-chart-tooltip .tip-row {{
+    display: flex;
+    gap: 6px;
+  }}
+  .etf-chart-tooltip .tip-label {{
+    color: #94a3b8;
+    min-width: 3.2rem;
+  }}
+  .etf-chart-tooltip .tip-swatch {{
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-top: 4px;
   }}
 </style>
 <div class="etf-sector-grid-wrap">
@@ -926,7 +1040,7 @@ def render_data_update_button() -> None:
 
 
 def install_same_window_chip_navigation() -> None:
-    """섹터 펼침(페이지 리로드 없음) + 종목 칩 동일 창 이동 핸들러"""
+    """섹터 펼침 + 차트 툴팁 + 종목 칩 이동 핸들러"""
     components.html(
         """
         <script>
@@ -935,8 +1049,39 @@ def install_same_window_chip_navigation() -> None:
           const script = parentDoc.createElement('script');
           script.textContent = `
             (function () {
-              if (window.__etfGridHandlersInstalledV3) return;
-              window.__etfGridHandlersInstalledV3 = true;
+              if (window.__etfGridHandlersInstalledV4) return;
+              window.__etfGridHandlersInstalledV4 = true;
+
+              if (!document.getElementById('etf-chart-tooltip-style')) {
+                const style = document.createElement('style');
+                style.id = 'etf-chart-tooltip-style';
+                style.textContent = `
+                  .etf-chart-tooltip {
+                    position: fixed; z-index: 10000; pointer-events: none; display: none;
+                    min-width: 140px; padding: 8px 10px; border: 1px solid #cbd5e1;
+                    border-radius: 6px; background: rgba(15, 23, 42, 0.92); color: #f8fafc;
+                    font-size: 11px; line-height: 1.45;
+                    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+                  }
+                  .etf-chart-tooltip .tip-row { display: flex; gap: 6px; }
+                  .etf-chart-tooltip .tip-label { color: #94a3b8; min-width: 3.2rem; }
+                  .etf-chart-tooltip .tip-swatch {
+                    display: inline-block; width: 8px; height: 8px;
+                    border-radius: 2px; margin-top: 4px; flex: 0 0 auto;
+                  }
+                `;
+                document.head.appendChild(style);
+              }
+
+              function ensureTooltip() {
+                let tip = document.getElementById('etf-chart-tooltip');
+                if (tip) return tip;
+                tip = document.createElement('div');
+                tip.id = 'etf-chart-tooltip';
+                tip.className = 'etf-chart-tooltip';
+                document.body.appendChild(tip);
+                return tip;
+              }
 
               function closeAllExpands(exceptId) {
                 document.querySelectorAll('tr.etf-expand-row').forEach(function (row) {
@@ -971,6 +1116,42 @@ def install_same_window_chip_navigation() -> None:
                 });
               }
 
+              function bindChartTooltips(root) {
+                const tip = ensureTooltip();
+                root.querySelectorAll('circle.etf-hover-point').forEach(function (pt) {
+                  if (pt.dataset.tipBound === '1') return;
+                  pt.dataset.tipBound = '1';
+                  pt.addEventListener('mousemove', function (e) {
+                    const date = pt.getAttribute('data-date') || '';
+                    const name = pt.getAttribute('data-name') || '';
+                    const value = pt.getAttribute('data-value') || '';
+                    const color = pt.getAttribute('data-color') || '#94a3b8';
+                    tip.innerHTML =
+                      '<div class="tip-row"><span class="tip-swatch" style="background:' + color + '"></span>' +
+                      '<div>' +
+                      '<div class="tip-row"><span class="tip-label">날짜</span><span>' + date + '</span></div>' +
+                      '<div class="tip-row"><span class="tip-label">종목</span><span>' + name + '</span></div>' +
+                      '<div class="tip-row"><span class="tip-label">정규화</span><span>' + value + '</span></div>' +
+                      '</div></div>';
+                    tip.style.display = 'block';
+                    tip.style.left = (e.clientX + 14) + 'px';
+                    tip.style.top = (e.clientY + 14) + 'px';
+                    pt.setAttribute('fill', color);
+                    pt.setAttribute('fill-opacity', '0.35');
+                    pt.setAttribute('stroke', color);
+                    pt.setAttribute('stroke-width', '1.5');
+                    pt.setAttribute('r', '5');
+                  });
+                  pt.addEventListener('mouseleave', function () {
+                    tip.style.display = 'none';
+                    pt.setAttribute('fill', 'transparent');
+                    pt.setAttribute('fill-opacity', '1');
+                    pt.setAttribute('stroke', 'none');
+                    pt.setAttribute('r', '6');
+                  });
+                });
+              }
+
               function bindChips(root) {
                 root.querySelectorAll('span.name-chip[data-symbol]').forEach(function (chip) {
                   if (chip.dataset.navBound === '1') return;
@@ -986,8 +1167,6 @@ def install_same_window_chip_navigation() -> None:
                     url.searchParams.set('symbol', symbol);
                     url.searchParams.set('sector', sector);
                     url.searchParams.set('keyword', keyword);
-                    url.searchParams.delete('etf_sector');
-                    url.searchParams.delete('etf_sector_clear');
                     window.location.assign(url.toString());
                   }
                   chip.addEventListener('click', function (e) {
@@ -1006,6 +1185,7 @@ def install_same_window_chip_navigation() -> None:
 
               function bindAll() {
                 bindSectorToggles(document);
+                bindChartTooltips(document);
                 bindChips(document);
               }
 
