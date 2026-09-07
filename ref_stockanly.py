@@ -344,16 +344,10 @@ def normalize_elements(raw) -> list[str]:
 
 
 def format_elements_cell(elements: list[str]) -> str:
-    """구성종목 그리드 셀 값 (3건 이상이면 ... 표시, 호버 시 전체 노출)"""
+    """구성종목 그리드 셀 값 (전체 목록을 쉼표로 연결)"""
     if not elements:
         return ""
-    full = ", ".join(elements)
-    if len(elements) < 3:
-        return full
-    short = ", ".join(elements[:2]) + ", ..."
-    # Streamlit(Glide) 호버 툴팁은 셀 원본 값을 보여주므로,
-    # 앞부분은 화면용(...), 뒷부분은 툴팁용 전체 목록으로 구성
-    return f"{short} | {full}"
+    return ", ".join(elements)
 
 
 def stock_list_column_config() -> dict:
@@ -366,8 +360,8 @@ def stock_list_column_config() -> dict:
         "섹터": st.column_config.TextColumn("섹터", width=95),
         "구성종목": st.column_config.TextColumn(
             "구성종목",
-            width=220,
-            help="3개 이상이면 '...'으로 표시되며, 마우스 오버 시 전체 구성종목을 확인할 수 있습니다.",
+            width="large",
+            help="ETF 구성종목 전체 목록",
         ),
         "야후심볼": None,
         "구성종목목록": None,
