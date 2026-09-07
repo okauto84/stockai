@@ -18,7 +18,7 @@ MAX_GRID_ROWS = 12
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거·구성종목 툴팁 등 UI 변경 시 증가)
-CHART_CACHE_VERSION = 8
+CHART_CACHE_VERSION = 9
 EXCLUDED_MA_FILTER_SECTORS = {"", "기타"}
 MA_FILTER_OPTIONS = [
     "전체",
@@ -1048,7 +1048,13 @@ ETF_GRID_UI_SCRIPT = r"""
     }
 
     function buildGotoHref(symbol, sector, keyword) {
-      var url = new URL(win.location.href);
+      // iframe 안에서는 부모(앱) URL 기준으로 쿼리를 만들어야 함
+      var app = window;
+      try { if (window.top && window.top.location && window.top.location.href) app = window.top; }
+      catch (err) {
+        try { if (window.parent && window.parent.location) app = window.parent; } catch (err2) {}
+      }
+      var url = new URL(app.location.href);
       url.search = '';
       url.hash = '';
       url.searchParams.set('goto', 'stock');
@@ -1060,6 +1066,10 @@ ETF_GRID_UI_SCRIPT = r"""
 
     function navigateToStock(symbol, sector, keyword) {
       var href = buildGotoHref(symbol, sector, keyword);
+      var app = window;
+      try { if (window.top) app = window.top; } catch (err) {
+        try { if (window.parent) app = window.parent; } catch (err2) {}
+      }
       try {
         var msg = {
           type: 'stockai-goto-stock',
@@ -1067,19 +1077,17 @@ ETF_GRID_UI_SCRIPT = r"""
           sector: sector || '',
           keyword: keyword || ''
         };
-        win.postMessage(msg, '*');
-        if (win.top && win.top !== win) win.top.postMessage(msg, '*');
-      } catch (err) {}
-      var target = win;
-      try { if (win.top) target = win.top; } catch (err2) {}
-      try {
-        target.location.assign(href);
-        return true;
+        app.postMessage(msg, '*');
+        window.parent && window.parent.postMessage(msg, '*');
       } catch (err3) {}
       try {
-        target.location.href = href;
+        app.location.assign(href);
         return true;
       } catch (err4) {}
+      try {
+        app.location.href = href;
+        return true;
+      } catch (err5) {}
       return false;
     }
 
@@ -1116,11 +1124,11 @@ ETF_GRID_UI_SCRIPT = r"""
       tip.style.top = Math.max(8, top) + 'px';
     }
 
-    // v3: 칩/툴팁만 JS 처리. 섹터 펼침은 checkbox+:has CSS가 담당.
-    if (doc.documentElement.getAttribute('data-stockai-etf-ui') === 'v3') {
+    // v4: 그리드·SVG가 같은 iframe 문서에 있을 때 설치
+    if (doc.documentElement.getAttribute('data-stockai-etf-ui') === 'v4') {
       return true;
     }
-    doc.documentElement.setAttribute('data-stockai-etf-ui', 'v3');
+    doc.documentElement.setAttribute('data-stockai-etf-ui', 'v4');
 
     var tip = ensureTip();
 
@@ -1215,46 +1223,44 @@ ETF_GRID_UI_SCRIPT = r"""
     return true;
   }
 
-  // components.html iframe → 부모/탑 문서에 이벤트 위임 설치
-  var ok = false;
-  try { ok = install(window.parent) || ok; } catch (e) {}
-  try { ok = install(window.top) || ok; } catch (e2) {}
-  // 최후: 같은 iframe 문서(거의 쓰이지 않음)
-  if (!ok) { try { install(window); } catch (e3) {} }
+  // 그리드 HTML과 동일 iframe에서 동작 (st.html DOMPurify가 SVG를 제거하던 문제 회피)
+  try { install(window); } catch (e) {}
 })();
 </script>
 """
 
 
 def render_sector_grid_component(grid_html: str, *, pair_rows: int = 0) -> None:
-    """그리드는 본문 렌더(CSS 섹터 펼침), 칩 네비/툴팁은 부모 문서 스크립트"""
-    del pair_rows
+    """섹터 그리드+SVG 차트를 components iframe에 렌더 (살균으로 차트 소실 방지)"""
+    # 기본 행 + 섹터 1개 펼침(칩·차트)이 보이도록 높이 확보, 초과분은 스크롤
+    height = 100 + max(int(pair_rows), 1) * 44 + 520
+    height = max(640, min(height, 2400))
+
     st.markdown(
         """
         <style>
-        iframe[height="0"],
-        iframe[height="0px"] {
-            display: none !important;
-            position: absolute !important;
-            width: 0 !important;
-            height: 0 !important;
-            border: 0 !important;
+        /* ETF 그리드 iframe이 본문 폭을 쓰도록 */
+        iframe[title="st.iframe"] {
+            width: 100% !important;
         }
         section.main .block-container,
         [data-testid="stVerticalBlock"],
-        [data-testid="stMarkdownContainer"],
-        [data-testid="stElementContainer"],
-        [data-testid="stHtml"] {
+        [data-testid="stElementContainer"] {
             overflow: visible !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    # st.html: checkbox/label/:has CSS 유지 (markdown 살균으로 input이 사라지는 문제 방지)
-    st.html(grid_html)
-    # 칩 클릭·차트 툴팁만 부모 문서에 주입
-    components.html(ETF_GRID_UI_SCRIPT, height=0)
+    # SVG 차트는 st.html DOMPurify에 제거되므로 iframe(components.html)에서 그대로 표시
+    components.html(
+        "<!doctype html><meta charset='utf-8'>"
+        "<style>html,body{margin:0;padding:0;background:transparent;}</style>"
+        + grid_html
+        + ETF_GRID_UI_SCRIPT,
+        height=height,
+        scrolling=True,
+    )
 
 
 def render_sector_count_grid() -> None:
