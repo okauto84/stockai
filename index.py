@@ -102,6 +102,8 @@ def apply_query_navigation() -> None:
 
     st.session_state["symbol"] = symbol
     st.session_state["nav_page"] = PAGE_STOCK
+    # radio 위젯 값과 쿼리 반영 타이밍이 어긋나도 이번 런에서 분석 탭을 강제
+    st.session_state["_goto_stock"] = True
 
     # 종목 검색 그리드에 해당 ETF가 보이도록 필터 반영
     st.session_state["stock_list_market_ui"] = "ETF"
@@ -175,6 +177,9 @@ def main() -> None:
         st.session_state["symbol"] = ""
 
     page = render_top_bar()
+    if st.session_state.pop("_goto_stock", False):
+        # radio 인스턴스화 이후 session_state[nav_page] 재설정은 금지 → 라우팅만 강제
+        page = PAGE_STOCK
 
     if page == PAGE_ETF:
         ref_etf.render_page()

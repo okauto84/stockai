@@ -27,7 +27,7 @@ GRID_COLUMNS = list(ref_stockanly.GRID_COLUMNS)
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거 등 UI 변경 시 증가)
-CHART_CACHE_VERSION = 2
+CHART_CACHE_VERSION = 3
 
 
 def sector_to_filename(sector: str) -> str:
@@ -1268,7 +1268,7 @@ def install_same_window_chip_navigation() -> None:
         })();
         </script>
         """,
-        height=0,
+        height=1,
     )
 
 
