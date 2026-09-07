@@ -184,7 +184,7 @@ def inject_styles() -> None:
 
 def apply_query_navigation() -> None:
     """ETF 종목 클릭 시 개별 종목 분석 탭·검색·선택·차트까지 자동 연결"""
-    # Streamlit query_params는 list일 수 있음
+
     def _qp(name: str) -> str:
         raw = st.query_params.get(name, "")
         if isinstance(raw, (list, tuple)):
@@ -201,10 +201,10 @@ def apply_query_navigation() -> None:
     if not keyword:
         keyword = symbol.split(".")[0]
 
+    # 위젯 생성 전에 탭·심볼·필터를 확정 (durable force)
     st.session_state["symbol"] = symbol
     st.session_state["nav_page"] = PAGE_STOCK
-    st.session_state["_goto_stock"] = True
-    # 검색 버튼 실행과 동일하게 applied 필터 반영 + 그리드 행 자동 선택 예약
+    st.session_state["_force_nav_page"] = PAGE_STOCK
     st.session_state["_pending_stock_select_symbol"] = symbol
 
     st.session_state["stock_list_market_ui"] = "ETF"
@@ -221,6 +221,7 @@ def apply_query_navigation() -> None:
     # 이전 그리드 선택 잔존으로 symbol이 덮어씌워지지 않도록 초기화
     st.session_state.pop("stock_list_selection", None)
 
+    # 쿼리 소비 (재진입 루프 방지). force 플래그가 남아 있어 탭 전환은 유지됨.
     for key in ("goto", "symbol", "sector", "keyword"):
         if key in st.query_params:
             del st.query_params[key]
@@ -296,11 +297,19 @@ def main() -> None:
     # 인증 취소는 radio 생성 전에 nav_page를 되돌려 위젯 키 충돌을 피함
     if st.session_state.pop("_cancel_data_update", False):
         st.session_state["nav_page"] = PAGE_ETF
+        st.session_state.pop("_force_nav_page", None)
+
+    # ETF 칩 네비: radio 생성 전에 강제 탭을 세션에 반영
+    force_page = st.session_state.get("_force_nav_page")
+    if force_page in PAGE_OPTIONS:
+        st.session_state["nav_page"] = force_page
 
     page = render_top_bar()
-    if st.session_state.pop("_goto_stock", False):
-        # radio 인스턴스화 이후 session_state[nav_page] 재설정은 금지 → 라우팅만 강제
-        page = PAGE_STOCK
+
+    # radio 값과 무관하게 강제 라우팅 (쿼리 삭제 재실행에도 안전)
+    if force_page in PAGE_OPTIONS:
+        page = force_page
+        st.session_state.pop("_force_nav_page", None)
 
     # Data update 탭을 벗어나면 인증 해제 → 다시 진입 시 알람창 재표시
     if page != PAGE_DATA_UPDATE:

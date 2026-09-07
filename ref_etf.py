@@ -9,7 +9,6 @@ from urllib.parse import urlencode
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 ROOT_DIR = Path(__file__).resolve().parent
 KOSPI_LIST_FILE = ROOT_DIR / "data" / "kospilist" / "kospilist.json"
@@ -253,12 +252,12 @@ def _stock_chip(
     *,
     color: str | None = None,
 ) -> str:
-    """개별 종목 분석 탭 이동용 칩(<a target=_top>) HTML"""
+    """개별 종목 분석 탭 이동용 칩 HTML (상대 쿼리 · 동일 창)"""
     name = html.escape(etf["name"])
     symbol = str(etf["yahoosymbol"]).strip()
     keyword = str(etf.get("code") or etf["name"]).strip()
-    # iframe 상대경로(?...)가 아닌 앱 루트(/?)로 이동해야 탭 전환이 됨
-    href = "/?" + urlencode(
+    # 현재 경로를 유지하는 상대 쿼리 (?...) — 하드코딩 /? 는 배포 경로에서 깨짐
+    href = "?" + urlencode(
         {
             "goto": "stock",
             "symbol": symbol,
@@ -271,7 +270,6 @@ def _stock_chip(
     sector_q = html.escape(sector, quote=True)
     keyword_q = html.escape(keyword, quote=True)
     elements_tip = _format_elements_tooltip(etf.get("elements"))
-    # title_q: kospilist.json elements 전체 목록 (없으면 기본 안내)
     title_q = html.escape(
         elements_tip or f"{symbol} 분석 보기",
         quote=True,
@@ -287,7 +285,7 @@ def _stock_chip(
             f'<i class="chip-swatch" style="background:{html.escape(color, quote=True)}"></i>'
         )
     return (
-        f'<a class="name-chip" href="{href_q}" target="_top" rel="noopener" '
+        f'<a class="name-chip" href="{href_q}" '
         f'data-symbol="{symbol_q}" data-sector="{sector_q}" '
         f'data-keyword="{keyword_q}"{elements_attr} title="{title_q}">'
         f"{swatch}{name}</a>"
@@ -1006,211 +1004,224 @@ def load_sector_payload(sector: str) -> dict:
     return load_payload_from_path(sector_json_path(sector))
 
 
+ETF_GRID_UI_SCRIPT = """
+<script>
+(function () {
+  // st.html(본문)에 직접 삽입 — components.html iframe/샌드박스 우회
+  var root = window;
+  var doc = root.document;
+  if (!doc) return;
+
+  function ensureTip() {
+    var tip = doc.getElementById('etf-chart-tooltip');
+    if (tip) return tip;
+    tip = doc.createElement('div');
+    tip.id = 'etf-chart-tooltip';
+    tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;display:none;min-width:140px;max-width:360px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(15,23,42,0.92);color:#f8fafc;font-size:11px;line-height:1.45;box-shadow:0 4px 14px rgba(15,23,42,0.2);white-space:normal;word-break:keep-all;';
+    (doc.body || doc.documentElement).appendChild(tip);
+    return tip;
+  }
+
+  function buildGotoHref(symbol, sector, keyword) {
+    var url = new URL(root.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('goto', 'stock');
+    url.searchParams.set('symbol', symbol);
+    if (sector) url.searchParams.set('sector', sector);
+    if (keyword) url.searchParams.set('keyword', keyword);
+    return url.toString();
+  }
+
+  function navigateToStock(symbol, sector, keyword) {
+    var href = buildGotoHref(symbol, sector, keyword);
+    try {
+      var msg = {
+        type: 'stockai-goto-stock',
+        symbol: symbol,
+        sector: sector || '',
+        keyword: keyword || ''
+      };
+      root.postMessage(msg, '*');
+      if (root.parent && root.parent !== root) root.parent.postMessage(msg, '*');
+      if (root.top && root.top !== root) root.top.postMessage(msg, '*');
+    } catch (err) {}
+    try {
+      root.location.assign(href);
+      return true;
+    } catch (err) {}
+    try {
+      root.location.href = href;
+      return true;
+    } catch (err2) {}
+    return false;
+  }
+
+  function goChip(el) {
+    var symbol = (el.getAttribute('data-symbol') || '').trim();
+    if (!symbol) return false;
+    var sector = el.getAttribute('data-sector') || '';
+    var keyword = el.getAttribute('data-keyword') || '';
+    return navigateToStock(symbol, sector, keyword);
+  }
+
+  function closeOthers(exceptId) {
+    doc.querySelectorAll('tr.etf-expand-row.is-open').forEach(function (row) {
+      if (exceptId && row.id === exceptId) return;
+      row.classList.remove('is-open');
+    });
+    doc.querySelectorAll('.sector-toggle[aria-expanded="true"]').forEach(function (el) {
+      if (exceptId && el.getAttribute('data-expand') === exceptId) return;
+      el.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleSector(el) {
+    var id = el.getAttribute('data-expand') || '';
+    var row = id ? doc.getElementById(id) : null;
+    if (!row) return;
+    var open = !row.classList.contains('is-open');
+    closeOthers(open ? id : null);
+    row.classList.toggle('is-open', open);
+    el.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      try { row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
+    }
+  }
+
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function placeTip(tip, x, y) {
+    tip.style.display = 'block';
+    tip.style.left = '0px';
+    tip.style.top = '0px';
+    var r = tip.getBoundingClientRect();
+    var vw = root.innerWidth || 0;
+    var vh = root.innerHeight || 0;
+    var left = x + 14;
+    var top = y + 14;
+    if (left + r.width + 8 > vw) left = x - r.width - 14;
+    if (top + r.height + 8 > vh) top = y - r.height - 14;
+    tip.style.left = Math.max(8, left) + 'px';
+    tip.style.top = Math.max(8, top) + 'px';
+  }
+
+  if (doc.documentElement.getAttribute('data-stockai-etf-ui') === 'v2') {
+    return;
+  }
+  doc.documentElement.setAttribute('data-stockai-etf-ui', 'v2');
+
+  var tip = ensureTip();
+
+  doc.addEventListener('click', function (e) {
+    var t = e.target;
+    var el = t && t.nodeType === 3 ? t.parentElement : t;
+    if (!el || !el.closest) return;
+
+    var sectorEl = el.closest('.sector-toggle[data-expand]');
+    if (sectorEl) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSector(sectorEl);
+      return;
+    }
+
+    var chip = el.closest('a.name-chip[data-symbol], .name-chip[data-symbol]');
+    if (!chip) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!goChip(chip)) {
+      var href = chip.getAttribute('href');
+      if (href) root.location.assign(href);
+    }
+  }, true);
+
+  doc.addEventListener('mousemove', function (e) {
+    var pt = e.target && e.target.closest
+      ? e.target.closest('circle.etf-hover-point') : null;
+    if (pt) {
+      var color = pt.getAttribute('data-color') || '#94a3b8';
+      tip.innerHTML =
+        '<div style="display:flex;gap:6px"><span style="width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span><div>' +
+        '<div>날짜 ' + (pt.getAttribute('data-date') || '') + '</div>' +
+        '<div>종목 ' + (pt.getAttribute('data-name') || '') + '</div>' +
+        '<div>정규화 ' + (pt.getAttribute('data-value') || '') + '</div></div></div>';
+      placeTip(tip, e.clientX, e.clientY);
+      pt.setAttribute('fill', color);
+      pt.setAttribute('fill-opacity', '0.35');
+      pt.setAttribute('stroke', color);
+      pt.setAttribute('stroke-width', '1.5');
+      pt.setAttribute('r', '5');
+      return;
+    }
+
+    var chip = e.target && e.target.closest
+      ? e.target.closest('a.name-chip[data-symbol]') : null;
+    if (chip) {
+      var elements = (chip.getAttribute('data-elements') || '').trim();
+      var titleText = (chip.getAttribute('title') || '').trim();
+      var text = elements || titleText;
+      if (text) {
+        if (!chip.getAttribute('data-title-backup')) {
+          chip.setAttribute('data-title-backup', titleText);
+          chip.removeAttribute('title');
+        }
+        tip.innerHTML =
+          '<div style="font-weight:600;margin-bottom:4px">구성종목</div>' +
+          '<div>' + escapeHtml(text) + '</div>';
+        placeTip(tip, e.clientX, e.clientY);
+        return;
+      }
+    }
+
+    tip.style.display = 'none';
+    doc.querySelectorAll('a.name-chip[data-title-backup]').forEach(function (node) {
+      if (!node.getAttribute('title')) {
+        node.setAttribute('title', node.getAttribute('data-title-backup') || '');
+      }
+      node.removeAttribute('data-title-backup');
+    });
+  });
+
+  doc.addEventListener('mouseout', function (e) {
+    var pt = e.target && e.target.closest
+      ? e.target.closest('circle.etf-hover-point') : null;
+    if (!pt) return;
+    tip.style.display = 'none';
+    pt.setAttribute('fill', 'transparent');
+    pt.setAttribute('fill-opacity', '1');
+    pt.setAttribute('stroke', 'none');
+    pt.setAttribute('r', '6');
+  });
+})();
+</script>
+"""
+
+
 def render_sector_grid_component(grid_html: str, *, pair_rows: int = 0) -> None:
-    """그리드를 페이지 본문에 렌더하고, 상호작용 스크립트는 부모 문서에 주입"""
-    del pair_rows  # 높이 제한 없음 — 브라우저 스크롤 사용
+    """그리드+상호작용을 본문(st.html)에 렌더 — iframe 샌드박스 네비 실패 방지"""
+    del pair_rows
     st.markdown(
         """
         <style>
-        /* components.html 높이 0 iframe 공간 제거 */
-        iframe[height="0"],
-        iframe[height="0px"] {
-            display: none !important;
-            position: absolute !important;
-            width: 0 !important;
-            height: 0 !important;
-            border: 0 !important;
-        }
-        /* 펼침 시 Streamlit 컨테이너가 잘리지 않도록 */
         section.main .block-container,
         [data-testid="stVerticalBlock"],
         [data-testid="stMarkdownContainer"],
-        [data-testid="stElementContainer"] {
+        [data-testid="stElementContainer"],
+        [data-testid="stHtml"] {
             overflow: visible !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown(grid_html, unsafe_allow_html=True)
-    # 펼침/칩 클릭/툴팁은 부모 document에서 처리 → iframe 높이 제한 없음
-    components.html(
-        """
-        <script>
-        (function () {
-          function install(win) {
-            if (!win) return;
-            var doc;
-            try { doc = win.document; } catch (err) { return; }
-            if (!doc) return;
-
-            // 이벤트는 위임 방식이므로 재설치해도 동작. tip만 중복 생성 방지.
-            var tip = doc.getElementById('etf-chart-tooltip');
-            if (!tip) {
-              tip = doc.createElement('div');
-              tip.id = 'etf-chart-tooltip';
-              tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;display:none;min-width:140px;max-width:360px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(15,23,42,0.92);color:#f8fafc;font-size:11px;line-height:1.45;box-shadow:0 4px 14px rgba(15,23,42,0.2);white-space:normal;word-break:keep-all';
-              (doc.body || doc.documentElement).appendChild(tip);
-            }
-
-            if (doc.documentElement.getAttribute('data-stockai-etf-ui') === '1') return;
-            doc.documentElement.setAttribute('data-stockai-etf-ui', '1');
-
-            function closeOthers(exceptId) {
-              doc.querySelectorAll('tr.etf-expand-row.is-open').forEach(function (row) {
-                if (exceptId && row.id === exceptId) return;
-                row.classList.remove('is-open');
-              });
-              doc.querySelectorAll('.sector-toggle[aria-expanded="true"]').forEach(function (el) {
-                if (exceptId && el.getAttribute('data-expand') === exceptId) return;
-                el.setAttribute('aria-expanded', 'false');
-              });
-            }
-
-            function toggleSector(el) {
-              var id = el.getAttribute('data-expand') || '';
-              var row = id ? doc.getElementById(id) : null;
-              if (!row) return;
-              var open = !row.classList.contains('is-open');
-              closeOthers(open ? id : null);
-              row.classList.toggle('is-open', open);
-              el.setAttribute('aria-expanded', open ? 'true' : 'false');
-              if (open) {
-                try { row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
-              }
-            }
-
-            function buildGotoHref(symbol, sector, keyword) {
-              var url = new URL(win.location.href);
-              url.search = '';
-              url.hash = '';
-              url.searchParams.set('goto', 'stock');
-              url.searchParams.set('symbol', symbol);
-              if (sector) url.searchParams.set('sector', sector);
-              if (keyword) url.searchParams.set('keyword', keyword);
-              return url.toString();
-            }
-
-            function goChip(el) {
-              var symbol = (el.getAttribute('data-symbol') || '').trim();
-              if (!symbol) return false;
-              var sector = el.getAttribute('data-sector') || '';
-              var keyword = el.getAttribute('data-keyword') || '';
-              try {
-                win.location.assign(buildGotoHref(symbol, sector, keyword));
-              } catch (err) {}
-              return true;
-            }
-
-            function escapeHtml(text) {
-              return String(text || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-            }
-
-            function placeTip(x, y) {
-              tip.style.display = 'block';
-              tip.style.left = '0px';
-              tip.style.top = '0px';
-              var r = tip.getBoundingClientRect();
-              var vw = win.innerWidth || 0;
-              var vh = win.innerHeight || 0;
-              var left = x + 14;
-              var top = y + 14;
-              if (left + r.width + 8 > vw) left = x - r.width - 14;
-              if (top + r.height + 8 > vh) top = y - r.height - 14;
-              tip.style.left = Math.max(8, left) + 'px';
-              tip.style.top = Math.max(8, top) + 'px';
-            }
-
-            doc.addEventListener('click', function (e) {
-              var t = e.target;
-              var el = t && t.nodeType === 3 ? t.parentElement : t;
-              if (!el || !el.closest) return;
-              var sectorEl = el.closest('.sector-toggle[data-expand]');
-              if (sectorEl) {
-                e.preventDefault();
-                e.stopPropagation();
-                toggleSector(sectorEl);
-                return;
-              }
-              var chip = el.closest('a.name-chip[data-symbol], .name-chip[data-symbol]');
-              if (chip) {
-                e.preventDefault();
-                e.stopPropagation();
-                goChip(chip);
-              }
-            }, true);
-
-            doc.addEventListener('mousemove', function (e) {
-              var pt = e.target && e.target.closest
-                ? e.target.closest('circle.etf-hover-point') : null;
-              if (pt) {
-                var color = pt.getAttribute('data-color') || '#94a3b8';
-                tip.innerHTML =
-                  '<div style="display:flex;gap:6px"><span style="width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span><div>' +
-                  '<div>날짜 ' + (pt.getAttribute('data-date') || '') + '</div>' +
-                  '<div>종목 ' + (pt.getAttribute('data-name') || '') + '</div>' +
-                  '<div>정규화 ' + (pt.getAttribute('data-value') || '') + '</div></div></div>';
-                placeTip(e.clientX, e.clientY);
-                pt.setAttribute('fill', color);
-                pt.setAttribute('fill-opacity', '0.35');
-                pt.setAttribute('stroke', color);
-                pt.setAttribute('stroke-width', '1.5');
-                pt.setAttribute('r', '5');
-                return;
-              }
-
-              var chip = e.target && e.target.closest
-                ? e.target.closest('a.name-chip[data-symbol]') : null;
-              if (chip) {
-                var elements = (chip.getAttribute('data-elements') || '').trim();
-                var titleText = (chip.getAttribute('title') || '').trim();
-                var text = elements || titleText;
-                if (text) {
-                  if (!chip.getAttribute('data-title-backup')) {
-                    chip.setAttribute('data-title-backup', titleText);
-                    chip.removeAttribute('title');
-                  }
-                  tip.innerHTML =
-                    '<div style="font-weight:600;margin-bottom:4px">구성종목</div>' +
-                    '<div>' + escapeHtml(text) + '</div>';
-                  placeTip(e.clientX, e.clientY);
-                  return;
-                }
-              }
-
-              tip.style.display = 'none';
-              doc.querySelectorAll('a.name-chip[data-title-backup]').forEach(function (el) {
-                if (!el.getAttribute('title')) {
-                  el.setAttribute('title', el.getAttribute('data-title-backup') || '');
-                }
-                el.removeAttribute('data-title-backup');
-              });
-            });
-
-            doc.addEventListener('mouseout', function (e) {
-              var pt = e.target && e.target.closest
-                ? e.target.closest('circle.etf-hover-point') : null;
-              if (!pt) return;
-              tip.style.display = 'none';
-              pt.setAttribute('fill', 'transparent');
-              pt.setAttribute('fill-opacity', '1');
-              pt.setAttribute('stroke', 'none');
-              pt.setAttribute('r', '6');
-            });
-          }
-
-          install(window.parent);
-          try { install(window.top); } catch (err) {}
-        })();
-        </script>
-        """,
-        height=0,
-    )
-
+    st.html(grid_html + ETF_GRID_UI_SCRIPT, unsafe_allow_javascript=True)
 
 
 def render_sector_count_grid() -> None:
