@@ -692,12 +692,14 @@ def _latest_grid_date(grid: list[dict]) -> date | None:
     return max(dates) if dates else None
 
 
-def _needs_api_update(grid: list[dict], today: date) -> bool:
-    """최신 데이터가 (오늘-3일)보다 오래되면 API 갱신 필요"""
+def _needs_api_update(
+    grid: list[dict], today: date, *, lookback_days: int = UPDATE_LOOKBACK_DAYS
+) -> bool:
+    """최신 데이터가 (오늘-lookback_days)보다 오래되면 API 갱신 필요"""
     latest = _latest_grid_date(grid)
     if latest is None:
         return True
-    return latest < (today - timedelta(days=UPDATE_LOOKBACK_DAYS))
+    return latest < (today - timedelta(days=lookback_days))
 
 
 def _merge_grid_by_date(
@@ -774,18 +776,20 @@ def save_sector_payload(sector: str, payload: dict) -> Path:
 def update_sector_payload_from_api(
     payload: dict,
     *,
+    lookback_days: int = UPDATE_LOOKBACK_DAYS,
     show_progress: bool = True,
     progress_label: str = "",
 ) -> tuple[dict, dict]:
     """
     섹터 JSON의 모든 ETF에 대해 API로 날짜 key를 비교·갱신.
 
-    - 최신 그리드 날짜가 (오늘-3일) 이상이면 API 호출 생략
-    - API 호출 시: (오늘-3일) 이전 날짜는 기존 값 유지, 이후 날짜는 모든 key 갱신
-    - 기존 데이터가 없거나 (오늘-3일)보다 오래되면 API 그리드로 전체 교체
+    - 최신 그리드 날짜가 (오늘-lookback_days) 이상이면 API 호출 생략
+    - API 호출 시: lookback 이전 날짜는 기존 값 유지, 이후 날짜는 모든 key 갱신
+    - 기존 데이터가 없거나 lookback보다 오래되면 API 그리드로 전체 교체
     """
     today = date.today()
-    compare_from = today - timedelta(days=UPDATE_LOOKBACK_DAYS)
+    lookback_days = max(0, int(lookback_days))
+    compare_from = today - timedelta(days=lookback_days)
     items = list(payload.get("items", []))
     errors = list(payload.get("errors", []))
     stats = {"requested": len(items), "updated": 0, "skipped": 0, "failed": 0}
@@ -813,7 +817,7 @@ def update_sector_payload_from_api(
             stats["failed"] += 1
             continue
 
-        if not _needs_api_update(grid, today):
+        if not _needs_api_update(grid, today, lookback_days=lookback_days):
             stats["skipped"] += 1
             continue
 
@@ -870,12 +874,15 @@ def update_sector_payload_from_api(
     return payload, stats
 
 
-def update_all_sector_json_files() -> dict:
+def update_all_sector_json_files(
+    *, lookback_days: int = UPDATE_LOOKBACK_DAYS
+) -> dict:
     """
     data/etf/*.json 전체 섹터 파일을 순회하며 ETF 그리드 갱신·저장.
 
     파일 단위 작업 사이에는 SECTOR_FILE_SLEEP_SECONDS(2초) 간격을 둔다.
     """
+    lookback_days = max(0, int(lookback_days))
     files = list_etf_sector_json_files()
     summary = {
         "files": len(files),
@@ -884,6 +891,7 @@ def update_all_sector_json_files() -> dict:
         "updated": 0,
         "skipped": 0,
         "failed": 0,
+        "lookback_days": lookback_days,
         "details": [],
     }
     if not files:
@@ -906,6 +914,7 @@ def update_all_sector_json_files() -> dict:
             )
             payload, stats = update_sector_payload_from_api(
                 payload,
+                lookback_days=lookback_days,
                 show_progress=True,
                 progress_label=label,
             )
@@ -954,37 +963,82 @@ def update_all_sector_json_files() -> dict:
     return summary
 
 
+def _prompt_update_lookback_days() -> None:
+    """스킵 일수 입력 다이얼로그(알람)"""
+    days = st.number_input(
+        "최근 몇 일 이내 데이터는 API 호출을 스킵할까요?",
+        min_value=0,
+        max_value=365,
+        value=int(st.session_state.get("etf_update_lookback_ui", UPDATE_LOOKBACK_DAYS)),
+        step=1,
+        help="예: 3 입력 시, 최신 데이터가 오늘부터 3일 이내이면 해당 종목은 스킵합니다.",
+        key="etf_update_lookback_input",
+    )
+    st.caption(
+        f"입력값 {int(days)}일: 최신 날짜가 (오늘 − {int(days)}일) 이상이면 스킵하고, "
+        "그보다 오래되면 API로 갱신합니다."
+    )
+    run_col, cancel_col = st.columns(2)
+    with run_col:
+        if st.button("업데이트 실행", type="primary", use_container_width=True):
+            st.session_state["etf_pending_lookback_days"] = int(days)
+            st.session_state["etf_update_lookback_ui"] = int(days)
+            st.session_state.pop("etf_show_update_prompt", None)
+            st.rerun()
+    with cancel_col:
+        if st.button("취소", use_container_width=True):
+            st.session_state.pop("etf_show_update_prompt", None)
+            st.rerun()
+
+
 def render_data_update_button() -> None:
-    """그리드 상단 data update 버튼"""
+    """그리드 상단 Data update 버튼 + 스킵 일수 입력 후 갱신"""
     btn_col, info_col = st.columns([1.2, 6])
     with btn_col:
         clicked = st.button(
             "Data update",
             use_container_width=True,
-            help=(
-                f"data/etf/*.json 전체 갱신 · "
-                f"최근 {UPDATE_LOOKBACK_DAYS}일 이내는 API 생략"
-            ),
+            help="클릭 후 스킵 일수를 입력하면 data/etf/*.json 전체를 갱신합니다.",
         )
     with info_col:
-        st.caption(
-            "data update: 모든 섹터 JSON을 API로 갱신·저장 "
-            f"(최근 {UPDATE_LOOKBACK_DAYS}일 이내 스킵)"
-        )
+        st.caption("Data update: 스킵 일수 입력 후 모든 섹터 JSON을 API로 갱신·저장")
 
-    if not clicked:
+    if clicked:
+        st.session_state["etf_show_update_prompt"] = True
+
+    # 실행 대기 중인 갱신 (다이얼로그/프롬프트에서 확인 후)
+    pending_lookback = st.session_state.pop("etf_pending_lookback_days", None)
+    if pending_lookback is not None:
+        lookback_days = max(0, int(pending_lookback))
+        with st.spinner(
+            f"전체 섹터 ETF 데이터 갱신 중... (최근 {lookback_days}일 이내 스킵)"
+        ):
+            summary = update_all_sector_json_files(lookback_days=lookback_days)
+        st.success(
+            f"전체 갱신 완료 · 스킵 기준 {lookback_days}일 · "
+            f"파일 {summary['file_ok']}/{summary['files']} · "
+            f"API 갱신 {summary['updated']} · "
+            f"스킵 {summary['skipped']} · "
+            f"종목 실패 {summary['failed']} · "
+            f"파일 실패 {summary['file_failed']}"
+        )
         return
 
-    with st.spinner("전체 섹터 ETF 데이터 갱신 중..."):
-        summary = update_all_sector_json_files()
+    if not st.session_state.get("etf_show_update_prompt"):
+        return
 
-    st.success(
-        f"전체 갱신 완료 · 파일 {summary['file_ok']}/{summary['files']} · "
-        f"API 갱신 {summary['updated']} · "
-        f"스킵 {summary['skipped']} · "
-        f"종목 실패 {summary['failed']} · "
-        f"파일 실패 {summary['file_failed']}"
-    )
+    # Streamlit dialog(알람) 지원 시 모달, 아니면 인라인 입력
+    dialog_fn = getattr(st, "dialog", None)
+    if callable(dialog_fn):
+        @dialog_fn("Data update · 스킵 일수 입력")
+        def _lookback_dialog() -> None:
+            _prompt_update_lookback_days()
+
+        _lookback_dialog()
+    else:
+        with st.container(border=True):
+            st.markdown("**Data update · 스킵 일수 입력**")
+            _prompt_update_lookback_days()
 
 
 def install_same_window_chip_navigation() -> None:
