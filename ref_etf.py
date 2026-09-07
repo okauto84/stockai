@@ -693,18 +693,136 @@ def _grid_to_records(grid_df: pd.DataFrame) -> list[dict]:
     return records
 
 
+def _parse_grid_date(raw) -> date | None:
+    """그리드 날짜 문자열 → date"""
+    if not raw:
+        return None
+    try:
+        return pd.Timestamp(raw).date()
+    except Exception:
+        return None
+
+
 def _latest_grid_date(grid: list[dict]) -> date | None:
     """그리드 최신 날짜"""
     dates: list[date] = []
     for row in grid:
-        raw = row.get("날짜")
-        if not raw:
-            continue
-        try:
-            dates.append(pd.Timestamp(raw).date())
-        except Exception:
-            continue
+        row_date = _parse_grid_date(row.get("날짜"))
+        if row_date is not None:
+            dates.append(row_date)
     return max(dates) if dates else None
+
+
+def _is_empty_close(value) -> bool:
+    """종가 값이 비어 있는지"""
+    if value is None:
+        return True
+    if isinstance(value, float) and pd.isna(value):
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def _period_has_valid_rows(
+    grid: list[dict],
+    *,
+    compare_from: date,
+    today: date,
+) -> bool:
+    """갱신 구간(compare_from~today)에 종가가 있는 행이 하나라도 있는지"""
+    for row in grid:
+        row_date = _parse_grid_date(row.get("날짜"))
+        if row_date is None or row_date < compare_from or row_date > today:
+            continue
+        if not _is_empty_close(row.get("종가")):
+            return True
+    return False
+
+
+def _missing_api_period_dates(
+    grid: list[dict],
+    api_grid: list[dict],
+    *,
+    compare_from: date,
+    today: date,
+) -> set[date]:
+    """API가 가진 갱신 구간 거래일 중 grid에 없거나 종가가 비어 있는 날짜"""
+    close_by_date: dict[date, object] = {}
+    for row in grid:
+        row_date = _parse_grid_date(row.get("날짜"))
+        if row_date is None:
+            continue
+        close_by_date[row_date] = row.get("종가")
+
+    missing: set[date] = set()
+    for row in api_grid:
+        row_date = _parse_grid_date(row.get("날짜"))
+        if row_date is None or row_date < compare_from or row_date > today:
+            continue
+        if row_date not in close_by_date or _is_empty_close(close_by_date[row_date]):
+            missing.add(row_date)
+    return missing
+
+
+def _should_replace_full_grid(
+    existing: list[dict],
+    api_grid: list[dict],
+    *,
+    compare_from: date,
+    today: date,
+) -> bool:
+    """
+    부분 병합 대신 etf_dataproc식 150일 전체 교체가 필요한지.
+
+    - 기존 그리드 없음
+    - 기존 최신이 compare_from보다 오래됨 → 부분 병합 시 중간 날짜 공백
+    - 갱신 구간에 유효 종가 행이 전혀 없음
+    """
+    del today  # 구간 상한은 호출부에서 사용
+    if not api_grid:
+        return False
+    if not existing:
+        return True
+
+    latest = _latest_grid_date(existing)
+    if latest is None or latest < compare_from:
+        return True
+
+    return False
+
+
+def _finalize_updated_grid(
+    existing: list[dict],
+    api_grid: list[dict],
+    *,
+    compare_from: date,
+    today: date,
+) -> list[dict]:
+    """
+    Data update 결과 그리드 확정.
+
+    오늘/기간 날짜가 없거나 비어 공백이 생기면 etf_dataproc와 같이
+    API 150일 전체 그리드로 채워 날짜 데이터가 비지 않게 한다.
+    """
+    if not api_grid:
+        return list(existing)
+
+    if _should_replace_full_grid(
+        existing, api_grid, compare_from=compare_from, today=today
+    ):
+        return api_grid
+
+    merged = _merge_grid_by_date(existing, api_grid, compare_from=compare_from)
+
+    # 병합 후에도 기간이 비었거나, API가 가진 기간 거래일이 빠/빈 종가면 전체 교체
+    if not _period_has_valid_rows(merged, compare_from=compare_from, today=today):
+        return api_grid
+    if _missing_api_period_dates(
+        merged, api_grid, compare_from=compare_from, today=today
+    ):
+        return api_grid
+    return merged
 
 
 def _merge_grid_by_date(
@@ -799,6 +917,8 @@ def update_sector_payload_from_api(
       예) 오늘=2026-09-07, N=4 → 2026-09-03 ~ 2026-09-07
     - 스킵: (오늘 − N) 미만 날짜는 기존 값 유지
     - 오늘 날짜: 최신일이 이미 오늘이어도 무조건 API로 재갱신
+    - 오늘/기간 날짜가 없거나 중간 공백이 생기면 etf_dataproc와 같이
+      ref_stockanly 150일 전체 그리드로 채워 날짜 데이터가 비지 않게 함
     """
     today = date.today()
     lookback_days = max(0, int(lookback_days))
@@ -852,14 +972,13 @@ def update_sector_payload_from_api(
                 kospi_chart=kospi_chart,
             )
             api_grid = _grid_to_records(api_df)
-            if not grid:
-                # 최초 적재만 전체 그리드 사용
-                item["grid"] = api_grid
-            else:
-                # 기존 데이터가 있으면 갱신 구간만 반영 (이전 날짜 스킵, 오늘은 덮어씀)
-                item["grid"] = _merge_grid_by_date(
-                    grid, api_grid, compare_from=compare_from
-                )
+            # 기간/오늘 날짜 공백 시 etf_dataproc와 동일하게 150일 전체로 채움
+            item["grid"] = _finalize_updated_grid(
+                grid,
+                api_grid,
+                compare_from=compare_from,
+                today=today,
+            )
             stats["updated"] += 1
             time.sleep(API_SLEEP_SECONDS)
         except Exception as exc:
