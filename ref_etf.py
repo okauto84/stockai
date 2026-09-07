@@ -43,8 +43,12 @@ def sector_json_path(sector: str) -> Path:
 
 
 @st.cache_data
-def load_etf_elements_by_symbol(mtime: float) -> dict[str, list[str]]:
+def load_etf_elements_by_symbol(mtime: float | None = None) -> dict[str, list[str]]:
     """야후심볼·종목코드 → ETF 구성종목명 목록 (mtime은 캐시 무효화용)"""
+    if mtime is None:
+        mtime = (
+            KOSPI_LIST_FILE.stat().st_mtime if KOSPI_LIST_FILE.exists() else 0.0
+        )
     del mtime  # cache key only
     with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
         payload = json.load(file)
@@ -91,8 +95,14 @@ def lookup_etf_elements(
 
 
 @st.cache_data
-def load_etf_sector_data(mtime: float) -> tuple[pd.DataFrame, dict[str, list[dict]]]:
+def load_etf_sector_data(
+    mtime: float | None = None,
+) -> tuple[pd.DataFrame, dict[str, list[dict]]]:
     """kospilist.json에서 ETF 섹터 집계 및 섹터별 종목(이름·심볼) 목록 로드"""
+    if mtime is None:
+        mtime = (
+            KOSPI_LIST_FILE.stat().st_mtime if KOSPI_LIST_FILE.exists() else 0.0
+        )
     del mtime  # cache key only
     with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
         payload = json.load(file)

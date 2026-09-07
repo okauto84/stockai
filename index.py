@@ -207,7 +207,7 @@ def clear_caches_and_reload_stock_list() -> None:
 
     ref_etf.load_etf_sector_data.clear()
     ref_stockanly.load_stock_list.clear()
-    ref_etf.load_etf_sector_data()
+    ref_etf.get_etf_sector_data()
     ref_stockanly.load_stock_list()
     st.session_state["app_data_reloaded"] = True
 
