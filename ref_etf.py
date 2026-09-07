@@ -781,6 +781,7 @@ def build_sector_grid_html(
   .etf-sector-grid-wrap {{
     width: 100%;
     overflow-x: auto;
+    overflow-y: visible;
     margin-bottom: 0.5rem;
   }}
   table.etf-sector-grid {{
@@ -788,7 +789,7 @@ def build_sector_grid_html(
     border-collapse: collapse;
     border: 1px solid #d0d7de;
     border-radius: 8px;
-    overflow: hidden;
+    overflow: visible;
     background: #fff;
     font-size: 12px;
     color: #0f172a;
@@ -960,250 +961,231 @@ def load_sector_payload(sector: str) -> dict:
     return load_payload_from_path(sector_json_path(sector))
 
 
-def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
-    """그리드 HTML + 클릭/툴팁 스크립트를 한 iframe에서 렌더"""
-    height = min(1600, max(560, 100 + max(1, pair_rows) * 52))
+def render_sector_grid_component(grid_html: str, *, pair_rows: int = 0) -> None:
+    """그리드를 페이지 본문에 렌더하고, 상호작용 스크립트는 부모 문서에 주입"""
+    del pair_rows  # 높이 제한 없음 — 브라우저 스크롤 사용
+    st.markdown(
+        """
+        <style>
+        /* components.html 높이 0 iframe 공간 제거 */
+        iframe[height="0"],
+        iframe[height="0px"] {
+            display: none !important;
+            position: absolute !important;
+            width: 0 !important;
+            height: 0 !important;
+            border: 0 !important;
+        }
+        /* 펼침 시 Streamlit 컨테이너가 잘리지 않도록 */
+        section.main .block-container,
+        [data-testid="stVerticalBlock"],
+        [data-testid="stMarkdownContainer"],
+        [data-testid="stElementContainer"] {
+            overflow: visible !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(grid_html, unsafe_allow_html=True)
+    # 펼침/칩 클릭/툴팁은 부모 document에서 처리 → iframe 높이 제한 없음
     components.html(
-        f"""
-        <style>html,body{{margin:0;padding:0;background:transparent;}}</style>
-        {grid_html}
+        """
         <script>
-        (function () {{
-          const doc = document;
+        (function () {
+          function install(win) {
+            if (!win) return;
+            var doc;
+            try { doc = win.document; } catch (err) { return; }
+            if (!doc) return;
 
-          function closeOthers(exceptId) {{
-            doc.querySelectorAll('tr.etf-expand-row.is-open').forEach(function (row) {{
-              if (exceptId && row.id === exceptId) return;
-              row.classList.remove('is-open');
-            }});
-            doc.querySelectorAll('.sector-toggle[aria-expanded="true"]').forEach(function (el) {{
-              if (exceptId && el.getAttribute('data-expand') === exceptId) return;
-              el.setAttribute('aria-expanded', 'false');
-            }});
-          }}
+            // 이벤트는 위임 방식이므로 재설치해도 동작. tip만 중복 생성 방지.
+            var tip = doc.getElementById('etf-chart-tooltip');
+            if (!tip) {
+              tip = doc.createElement('div');
+              tip.id = 'etf-chart-tooltip';
+              tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;display:none;min-width:140px;max-width:360px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(15,23,42,0.92);color:#f8fafc;font-size:11px;line-height:1.45;box-shadow:0 4px 14px rgba(15,23,42,0.2);white-space:normal;word-break:keep-all';
+              (doc.body || doc.documentElement).appendChild(tip);
+            }
 
-          function toggleSector(el) {{
-            const id = el.getAttribute('data-expand') || '';
-            const row = id ? doc.getElementById(id) : null;
-            if (!row) return;
-            const open = !row.classList.contains('is-open');
-            closeOthers(open ? id : null);
-            row.classList.toggle('is-open', open);
-            el.setAttribute('aria-expanded', open ? 'true' : 'false');
-            if (open) {{
-              try {{ row.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }}); }} catch (e) {{}}
-            }}
-          }}
+            if (doc.documentElement.getAttribute('data-stockai-etf-ui') === '1') return;
+            doc.documentElement.setAttribute('data-stockai-etf-ui', '1');
 
-          // Streamlit st.components.html iframe sandbox에는
-          // allow-top-navigation 이 없어 location / <a target=_top> 이 차단됨.
-          // allow-same-origin 으로 부모 document에 스크립트를 심어 우회.
-          function buildGotoHref(symbol, sector, keyword) {{
-            let url;
-            try {{
-              url = new URL((window.parent && window.parent.location.href) || window.location.href);
-            }} catch (err) {{
-              url = new URL(window.location.origin + '/');
-            }}
-            url.search = '';
-            url.hash = '';
-            url.searchParams.set('goto', 'stock');
-            url.searchParams.set('symbol', symbol);
-            if (sector) url.searchParams.set('sector', sector);
-            if (keyword) url.searchParams.set('keyword', keyword);
-            return url.toString();
-          }}
+            function closeOthers(exceptId) {
+              doc.querySelectorAll('tr.etf-expand-row.is-open').forEach(function (row) {
+                if (exceptId && row.id === exceptId) return;
+                row.classList.remove('is-open');
+              });
+              doc.querySelectorAll('.sector-toggle[aria-expanded="true"]').forEach(function (el) {
+                if (exceptId && el.getAttribute('data-expand') === exceptId) return;
+                el.setAttribute('aria-expanded', 'false');
+              });
+            }
 
-          function installParentNav(win) {{
-            if (!win || win === window) return;
-            try {{
-              const pdoc = win.document;
-              if (!pdoc || pdoc.documentElement.getAttribute('data-stockai-nav') === '1') return;
-              pdoc.documentElement.setAttribute('data-stockai-nav', '1');
-              const s = pdoc.createElement('script');
-              s.textContent = [
-                'window.addEventListener("message", function (ev) {{',
-                '  var d = ev.data || {{}};',
-                '  if (d.type !== "stockai-goto-stock" || !d.symbol) return;',
-                '  try {{',
-                '    var url = new URL(window.location.href);',
-                '    url.search = "";',
-                '    url.hash = "";',
-                '    url.searchParams.set("goto", "stock");',
-                '    url.searchParams.set("symbol", d.symbol);',
-                '    if (d.sector) url.searchParams.set("sector", d.sector);',
-                '    if (d.keyword) url.searchParams.set("keyword", d.keyword);',
-                '    window.location.assign(url.toString());',
-                '  }} catch (e) {{}}',
-                '}});'
-              ].join('\\n');
-              (pdoc.head || pdoc.documentElement).appendChild(s);
-            }} catch (err) {{}}
-          }}
+            function toggleSector(el) {
+              var id = el.getAttribute('data-expand') || '';
+              var row = id ? doc.getElementById(id) : null;
+              if (!row) return;
+              var open = !row.classList.contains('is-open');
+              closeOthers(open ? id : null);
+              row.classList.toggle('is-open', open);
+              el.setAttribute('aria-expanded', open ? 'true' : 'false');
+              if (open) {
+                try { row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
+              }
+            }
 
-          function goChip(el) {{
-            const symbol = (el.getAttribute('data-symbol') || '').trim();
-            if (!symbol) return false;
-            const sector = el.getAttribute('data-sector') || '';
-            const keyword = el.getAttribute('data-keyword') || '';
-            const href = buildGotoHref(symbol, sector, keyword);
-            const msg = {{
-              type: 'stockai-goto-stock',
-              symbol: symbol,
-              sector: sector,
-              keyword: keyword
-            }};
+            function buildGotoHref(symbol, sector, keyword) {
+              var url = new URL(win.location.href);
+              url.search = '';
+              url.hash = '';
+              url.searchParams.set('goto', 'stock');
+              url.searchParams.set('symbol', symbol);
+              if (sector) url.searchParams.set('sector', sector);
+              if (keyword) url.searchParams.set('keyword', keyword);
+              return url.toString();
+            }
 
-            // 1) 부모(비sandbox) 스크립트가 location 변경
-            try {{ window.parent.postMessage(msg, '*'); }} catch (err) {{}}
-            try {{
-              if (window.top && window.top !== window.parent) {{
-                window.top.postMessage(msg, '*');
-              }}
-            }} catch (err) {{}}
+            function goChip(el) {
+              var symbol = (el.getAttribute('data-symbol') || '').trim();
+              if (!symbol) return false;
+              var sector = el.getAttribute('data-sector') || '';
+              var keyword = el.getAttribute('data-keyword') || '';
+              try {
+                win.location.assign(buildGotoHref(symbol, sector, keyword));
+              } catch (err) {}
+              return true;
+            }
 
-            // 2) 부모 document의 <a> 클릭 (실패해도 throw 안 할 수 있음 → 계속 시도)
-            try {{
-              const pdoc = window.parent.document;
-              const a = pdoc.createElement('a');
-              a.href = href;
-              a.style.display = 'none';
-              pdoc.body.appendChild(a);
-              a.click();
-              a.remove();
-            }} catch (err) {{}}
+            function escapeHtml(text) {
+              return String(text || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+            }
 
-            // 3) allow-popups: window.open(..., '_top')
-            try {{ window.open(href, '_top'); }} catch (err) {{}}
+            function placeTip(x, y) {
+              tip.style.display = 'block';
+              tip.style.left = '0px';
+              tip.style.top = '0px';
+              var r = tip.getBoundingClientRect();
+              var vw = win.innerWidth || 0;
+              var vh = win.innerHeight || 0;
+              var left = x + 14;
+              var top = y + 14;
+              if (left + r.width + 8 > vw) left = x - r.width - 14;
+              if (top + r.height + 8 > vh) top = y - r.height - 14;
+              tip.style.left = Math.max(8, left) + 'px';
+              tip.style.top = Math.max(8, top) + 'px';
+            }
 
-            // 4) 부모 location 직접 시도
-            try {{
-              if (window.parent && window.parent !== window) {{
-                window.parent.location.href = href;
-              }}
-            }} catch (err) {{}}
-
-            return true;
-          }}
-
-          installParentNav(window.parent);
-          try {{ installParentNav(window.top); }} catch (err) {{}}
-
-          doc.addEventListener('click', function (e) {{
-            const t = e.target;
-            const el = t && t.nodeType === 3 ? t.parentElement : t;
-            if (!el || !el.closest) return;
-            const sectorEl = el.closest('.sector-toggle[data-expand]');
-            if (sectorEl) {{
-              e.preventDefault();
-              e.stopPropagation();
-              toggleSector(sectorEl);
-              return;
-            }}
-            const chip = el.closest('a.name-chip[data-symbol], .name-chip[data-symbol]');
-            if (chip) {{
-              e.preventDefault();
-              e.stopPropagation();
-              goChip(chip);
-            }}
-          }});
-
-          const tip = doc.createElement('div');
-          tip.id = 'etf-chart-tooltip';
-          tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;display:none;min-width:140px;max-width:360px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(15,23,42,0.92);color:#f8fafc;font-size:11px;line-height:1.45;box-shadow:0 4px 14px rgba(15,23,42,0.2);white-space:normal;word-break:keep-all';
-          doc.body.appendChild(tip);
-
-          function escapeHtml(text) {{
-            return String(text || '')
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;');
-          }}
-
-          function placeTip(x, y) {{
-            tip.style.display = 'block';
-            tip.style.left = '0px';
-            tip.style.top = '0px';
-            const r = tip.getBoundingClientRect();
-            const vw = window.innerWidth || 0;
-            const vh = window.innerHeight || 0;
-            let left = x + 14;
-            let top = y + 14;
-            if (left + r.width + 8 > vw) left = x - r.width - 14;
-            if (top + r.height + 8 > vh) top = y - r.height - 14;
-            tip.style.left = Math.max(8, left) + 'px';
-            tip.style.top = Math.max(8, top) + 'px';
-          }}
-
-          doc.addEventListener('mousemove', function (e) {{
-            const pt = e.target && e.target.closest
-              ? e.target.closest('circle.etf-hover-point') : null;
-            if (pt) {{
-              const color = pt.getAttribute('data-color') || '#94a3b8';
-              tip.innerHTML =
-                '<div style="display:flex;gap:6px"><span style="width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span><div>' +
-                '<div>날짜 ' + (pt.getAttribute('data-date') || '') + '</div>' +
-                '<div>종목 ' + (pt.getAttribute('data-name') || '') + '</div>' +
-                '<div>정규화 ' + (pt.getAttribute('data-value') || '') + '</div></div></div>';
-              placeTip(e.clientX, e.clientY);
-              pt.setAttribute('fill', color);
-              pt.setAttribute('fill-opacity', '0.35');
-              pt.setAttribute('stroke', color);
-              pt.setAttribute('stroke-width', '1.5');
-              pt.setAttribute('r', '5');
-              return;
-            }}
-
-            const chip = e.target && e.target.closest
-              ? e.target.closest('a.name-chip[data-symbol]') : null;
-            if (chip) {{
-              const elements = (chip.getAttribute('data-elements') || '').trim();
-              const titleText = (chip.getAttribute('title') || '').trim();
-              const text = elements || titleText;
-              if (text) {{
-                // 커스텀 툴팁 표시 중에는 브라우저 기본 title 중복을 막음
-                if (!chip.getAttribute('data-title-backup')) {{
-                  chip.setAttribute('data-title-backup', titleText);
-                  chip.removeAttribute('title');
-                }}
-                tip.innerHTML =
-                  '<div style="font-weight:600;margin-bottom:4px">구성종목</div>' +
-                  '<div>' + escapeHtml(text) + '</div>';
-                placeTip(e.clientX, e.clientY);
+            doc.addEventListener('click', function (e) {
+              var t = e.target;
+              var el = t && t.nodeType === 3 ? t.parentElement : t;
+              if (!el || !el.closest) return;
+              var sectorEl = el.closest('.sector-toggle[data-expand]');
+              if (sectorEl) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleSector(sectorEl);
                 return;
-              }}
-            }}
+              }
+              var chip = el.closest('a.name-chip[data-symbol], .name-chip[data-symbol]');
+              if (chip) {
+                e.preventDefault();
+                e.stopPropagation();
+                goChip(chip);
+              }
+            }, true);
 
-            tip.style.display = 'none';
-            doc.querySelectorAll('a.name-chip[data-title-backup]').forEach(function (el) {{
-              if (!el.getAttribute('title')) {{
-                el.setAttribute('title', el.getAttribute('data-title-backup') || '');
-              }}
-              el.removeAttribute('data-title-backup');
-            }});
-          }});
+            doc.addEventListener('mousemove', function (e) {
+              var pt = e.target && e.target.closest
+                ? e.target.closest('circle.etf-hover-point') : null;
+              if (pt) {
+                var color = pt.getAttribute('data-color') || '#94a3b8';
+                tip.innerHTML =
+                  '<div style="display:flex;gap:6px"><span style="width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span><div>' +
+                  '<div>날짜 ' + (pt.getAttribute('data-date') || '') + '</div>' +
+                  '<div>종목 ' + (pt.getAttribute('data-name') || '') + '</div>' +
+                  '<div>정규화 ' + (pt.getAttribute('data-value') || '') + '</div></div></div>';
+                placeTip(e.clientX, e.clientY);
+                pt.setAttribute('fill', color);
+                pt.setAttribute('fill-opacity', '0.35');
+                pt.setAttribute('stroke', color);
+                pt.setAttribute('stroke-width', '1.5');
+                pt.setAttribute('r', '5');
+                return;
+              }
 
-          doc.addEventListener('mouseout', function (e) {{
-            const pt = e.target && e.target.closest
-              ? e.target.closest('circle.etf-hover-point') : null;
-            if (!pt) return;
-            tip.style.display = 'none';
-            pt.setAttribute('fill', 'transparent');
-            pt.setAttribute('fill-opacity', '1');
-            pt.setAttribute('stroke', 'none');
-            pt.setAttribute('r', '6');
-          }});
-        }})();
+              var chip = e.target && e.target.closest
+                ? e.target.closest('a.name-chip[data-symbol]') : null;
+              if (chip) {
+                var elements = (chip.getAttribute('data-elements') || '').trim();
+                var titleText = (chip.getAttribute('title') || '').trim();
+                var text = elements || titleText;
+                if (text) {
+                  if (!chip.getAttribute('data-title-backup')) {
+                    chip.setAttribute('data-title-backup', titleText);
+                    chip.removeAttribute('title');
+                  }
+                  tip.innerHTML =
+                    '<div style="font-weight:600;margin-bottom:4px">구성종목</div>' +
+                    '<div>' + escapeHtml(text) + '</div>';
+                  placeTip(e.clientX, e.clientY);
+                  return;
+                }
+              }
+
+              tip.style.display = 'none';
+              doc.querySelectorAll('a.name-chip[data-title-backup]').forEach(function (el) {
+                if (!el.getAttribute('title')) {
+                  el.setAttribute('title', el.getAttribute('data-title-backup') || '');
+                }
+                el.removeAttribute('data-title-backup');
+              });
+            });
+
+            doc.addEventListener('mouseout', function (e) {
+              var pt = e.target && e.target.closest
+                ? e.target.closest('circle.etf-hover-point') : null;
+              if (!pt) return;
+              tip.style.display = 'none';
+              pt.setAttribute('fill', 'transparent');
+              pt.setAttribute('fill-opacity', '1');
+              pt.setAttribute('stroke', 'none');
+              pt.setAttribute('r', '6');
+            });
+          }
+
+          install(window.parent);
+          try { install(window.top); } catch (err) {}
+        })();
         </script>
         """,
-        height=height,
-        scrolling=True,
+        height=0,
     )
+
 
 
 def render_sector_count_grid() -> None:
     """섹터별 ETF 종목 수 HTML 그리드 (이동평균선 필터 포함)"""
+    st.markdown(
+        """
+        <style>
+        /* 이동평균선 콤보박스 직접 텍스트 입력 차단 (선택만 가능) */
+        div[data-testid="stSelectbox"] input {
+            pointer-events: none !important;
+            caret-color: transparent !important;
+            user-select: none !important;
+        }
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+            cursor: pointer !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     ma_col, _ = st.columns([1.2, 4.8])
     with ma_col:
         ma_filter = st.selectbox(
