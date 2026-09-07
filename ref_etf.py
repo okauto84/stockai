@@ -1121,28 +1121,13 @@ def update_all_sector_json_files(
     return summary
 
 
-def _queue_etf_data_update() -> None:
-    """다이얼로그 '업데이트 실행' on_click: 세션에 갱신 예약 (rerun 전에 확정)"""
-    raw = st.session_state.get("etf_update_lookback_input", UPDATE_LOOKBACK_DAYS)
-    try:
-        lookback = max(0, int(raw))
-    except (TypeError, ValueError):
-        lookback = UPDATE_LOOKBACK_DAYS
-    st.session_state["etf_pending_lookback_days"] = lookback
-    st.session_state["etf_update_lookback_ui"] = lookback
-    st.session_state["etf_do_update"] = True
-    st.session_state["etf_show_update_prompt"] = False
+def _prompt_update_lookback_days() -> bool:
+    """
+    스킵 일수 입력 UI.
 
-
-def _cancel_etf_data_update_prompt() -> None:
-    """다이얼로그 취소 on_click"""
-    st.session_state["etf_show_update_prompt"] = False
-    st.session_state.pop("etf_pending_lookback_days", None)
-    st.session_state["etf_do_update"] = False
-
-
-def _prompt_update_lookback_days() -> None:
-    """스킵 일수 입력 다이얼로그(알람)"""
+    Returns:
+        True면 사용자가 '업데이트 실행'을 눌러 갱신을 시작해야 함.
+    """
     today = date.today()
     days = st.number_input(
         "현재일로부터 며칠 전까지 갱신할까요? (이전 날짜는 스킵)",
@@ -1166,20 +1151,33 @@ def _prompt_update_lookback_days() -> None:
     )
     run_col, cancel_col = st.columns(2)
     with run_col:
-        st.button(
+        run_clicked = st.button(
             "업데이트 실행",
             type="primary",
             use_container_width=True,
             key="etf_update_run_btn",
-            on_click=_queue_etf_data_update,
         )
     with cancel_col:
-        st.button(
+        cancel_clicked = st.button(
             "취소",
             use_container_width=True,
             key="etf_update_cancel_btn",
-            on_click=_cancel_etf_data_update_prompt,
         )
+
+    if cancel_clicked:
+        st.session_state["etf_show_update_prompt"] = False
+        st.session_state.pop("etf_pending_lookback_days", None)
+        st.session_state["etf_do_update"] = False
+        return False
+
+    if run_clicked:
+        st.session_state["etf_pending_lookback_days"] = lookback
+        st.session_state["etf_update_lookback_ui"] = lookback
+        st.session_state["etf_do_update"] = True
+        st.session_state["etf_show_update_prompt"] = False
+        return True
+
+    return False
 
 
 def render_data_update_button() -> None:
@@ -1199,28 +1197,18 @@ def render_data_update_button() -> None:
         st.session_state["etf_show_update_prompt"] = True
         st.session_state["etf_do_update"] = False
 
-    show_prompt = bool(st.session_state.get("etf_show_update_prompt"))
-    do_update = bool(st.session_state.get("etf_do_update"))
+    # st.dialog + on_click 조합은 클릭이 무시되는 경우가 있어 인라인 폼 사용
+    if st.session_state.get("etf_show_update_prompt"):
+        with st.container(border=True):
+            st.markdown("**Data update · 스킵 일수 입력**")
+            _prompt_update_lookback_days()
 
-    # 실행 예약 시에는 입력 창을 열지 않음(창 닫힘)
-    if show_prompt and not do_update:
-        dialog_fn = getattr(st, "dialog", None)
-        if callable(dialog_fn):
+    if not st.session_state.get("etf_do_update"):
+        return
 
-            @dialog_fn("Data update · 스킵 일수 입력")
-            def _lookback_dialog() -> None:
-                _prompt_update_lookback_days()
-
-            _lookback_dialog()
-        else:
-            with st.container(border=True):
-                st.markdown("**Data update · 스킵 일수 입력**")
-                _prompt_update_lookback_days()
-
-    # 다이얼로그 on_click 이후 세션을 다시 읽어 갱신 실행 여부 확정
-    do_update = bool(st.session_state.get("etf_do_update"))
     pending_lookback = st.session_state.get("etf_pending_lookback_days")
-    if not do_update or pending_lookback is None:
+    if pending_lookback is None:
+        st.session_state["etf_do_update"] = False
         return
 
     st.session_state["etf_do_update"] = False
