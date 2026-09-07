@@ -90,7 +90,7 @@ def inject_styles() -> None:
 
 
 def apply_query_navigation() -> None:
-    """ETF 종목 클릭 시 개별 종목 분석 탭·검색 그리드로 전환"""
+    """ETF 종목 클릭 시 개별 종목 분석 탭·검색·선택·차트까지 자동 연결"""
     # Streamlit query_params는 list일 수 있음
     def _qp(name: str) -> str:
         raw = st.query_params.get(name, "")
@@ -110,19 +110,24 @@ def apply_query_navigation() -> None:
 
     st.session_state["symbol"] = symbol
     st.session_state["nav_page"] = PAGE_STOCK
-    # radio 위젯 값과 쿼리 반영 타이밍이 어긋나도 이번 런에서 분석 탭을 강제
     st.session_state["_goto_stock"] = True
+    # 검색 버튼 실행과 동일하게 applied 필터 반영 + 그리드 행 자동 선택 예약
+    st.session_state["_pending_stock_select_symbol"] = symbol
 
-    # 종목 검색 그리드에 해당 ETF가 보이도록 필터 반영
     st.session_state["stock_list_market_ui"] = "ETF"
     st.session_state["stock_list_market_applied"] = "ETF"
     if sector:
         st.session_state["stock_list_sector_ui"] = sector
         st.session_state["stock_list_sector_applied"] = sector
+    else:
+        st.session_state["stock_list_sector_ui"] = "전체"
+        st.session_state["stock_list_sector_applied"] = "전체"
     st.session_state["stock_list_keyword_ui"] = keyword
     st.session_state["stock_list_keyword_applied"] = keyword
 
-    # 네비 키 제거 (재진입·중복 처리 방지)
+    # 이전 그리드 선택 잔존으로 symbol이 덮어씌워지지 않도록 초기화
+    st.session_state.pop("stock_list_selection", None)
+
     for key in ("goto", "symbol", "sector", "keyword"):
         if key in st.query_params:
             del st.query_params[key]

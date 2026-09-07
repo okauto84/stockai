@@ -320,7 +320,29 @@ def apply_stock_list_selection(
         return
 
     selected_row = stock_df.iloc[selection_state.selection.rows[0]]
-    st.session_state["symbol"] = selected_row["야후심볼"]
+    st.session_state["symbol"] = str(selected_row["야후심볼"]).strip().upper()
+
+
+def _prepare_auto_select_row(display_df: pd.DataFrame) -> None:
+    """ETF 칩 네비게이션 직후 해당 야후심볼 행을 그리드에서 자동 선택"""
+    pending = st.session_state.pop("_pending_stock_select_symbol", None)
+    if not pending:
+        return
+
+    pending = str(pending).strip().upper()
+    st.session_state["symbol"] = pending
+
+    match_positions = [
+        idx
+        for idx, sym in enumerate(display_df["야후심볼"].astype(str).str.upper())
+        if sym == pending
+    ]
+    if not match_positions:
+        return
+
+    st.session_state["stock_list_selection"] = {
+        "selection": {"rows": [int(match_positions[0])], "columns": []}
+    }
 
 
 def filter_stock_list(
@@ -385,6 +407,26 @@ def render_stock_list_grid() -> None:
     sector_options = get_sector_options(stock_df)
     if st.session_state["stock_list_sector_ui"] not in sector_options:
         st.session_state["stock_list_sector_ui"] = "전체"
+    if st.session_state["stock_list_sector_applied"] not in sector_options:
+        st.session_state["stock_list_sector_applied"] = "전체"
+
+    # ETF 칩 진입: 위젯 생성 전에 검색 가능하도록 섹터 완화
+    pending_sym = st.session_state.get("_pending_stock_select_symbol")
+    if pending_sym:
+        pending_u = str(pending_sym).strip().upper()
+        trial_df = filter_stock_list(
+            stock_df,
+            st.session_state["stock_list_market_applied"],
+            st.session_state["stock_list_keyword_applied"],
+            st.session_state["stock_list_sector_applied"],
+        )
+        in_result = (
+            not trial_df.empty
+            and pending_u in set(trial_df["야후심볼"].astype(str).str.upper())
+        )
+        if not in_result:
+            st.session_state["stock_list_sector_applied"] = "전체"
+            st.session_state["stock_list_sector_ui"] = "전체"
 
     st.markdown(
         """
@@ -453,7 +495,9 @@ def render_stock_list_grid() -> None:
     )
 
     display_columns = ["시장", "종목코드", "종목명", "야후심볼", "ETF", "섹터"]
-    display_df = display_df[display_columns]
+    display_df = display_df[display_columns].reset_index(drop=True)
+
+    _prepare_auto_select_row(display_df)
 
     sector_caption = ""
     if st.session_state["stock_list_sector_applied"] != "전체":
@@ -473,6 +517,10 @@ def render_stock_list_grid() -> None:
         key="stock_list_selection",
     )
     apply_stock_list_selection(display_df, selection)
+
+    # 자동 선택 상태에서도 symbol 유지 (selection API 포맷 차이 대비)
+    if st.session_state.get("symbol"):
+        st.session_state["symbol"] = str(st.session_state["symbol"]).strip().upper()
 
 
 def prepare_chart_df(grid_df: pd.DataFrame) -> pd.DataFrame:
