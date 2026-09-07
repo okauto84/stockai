@@ -19,7 +19,8 @@ CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거·구성종목 툴팁 등 UI 변경 시 증가)
 CHART_CACHE_VERSION = 8
-EXCLUDED_MA20_SECTORS = {"", "기타"}
+EXCLUDED_MA_FILTER_SECTORS = {"", "기타"}
+MA_FILTER_OPTIONS = ["전체", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 
 
 def sector_to_filename(sector: str) -> str:
@@ -323,31 +324,31 @@ def latest_grid_row(item: dict) -> dict | None:
     return grid[-1] if isinstance(grid[-1], dict) else None
 
 
-def is_close_ge_ma20(item: dict) -> bool:
-    """최신 종가 >= MA20 여부"""
+def is_close_ge_ma(item: dict, ma_field: str) -> bool:
+    """최신 종가 >= 선택 MA 여부"""
     row = latest_grid_row(item)
     if not row:
         return False
     try:
         close = float(row.get("종가"))
-        ma20 = float(row.get("MA20"))
+        ma_value = float(row.get(ma_field))
     except (TypeError, ValueError):
         return False
-    return close >= ma20
+    return close >= ma_value
 
 
-def filter_payload_close_ge_ma20(payload: dict) -> dict:
-    """종가 >= MA20 인 ETF만 남긴 payload 복사본"""
+def filter_payload_close_ge_ma(payload: dict, ma_field: str) -> dict:
+    """종가 >= 선택 MA 인 ETF만 남긴 payload 복사본"""
     items = [
         item
         for item in (payload.get("items") or [])
-        if isinstance(item, dict) and is_close_ge_ma20(item)
+        if isinstance(item, dict) and is_close_ge_ma(item, ma_field)
     ]
     filtered = dict(payload)
     filtered["items"] = items
     counts = dict(payload.get("counts") or {})
     counts["success"] = len(items)
-    counts["filtered_close_ge_ma20"] = len(items)
+    counts[f"filtered_close_ge_{ma_field}"] = len(items)
     filtered["counts"] = counts
     return filtered
 
@@ -365,10 +366,11 @@ def _etf_json_cache_key() -> str:
 
 
 @st.cache_data(show_spinner=False)
-def collect_close_ge_ma20_by_sector(
+def collect_close_ge_ma_by_sector(
     cache_key: str,
+    ma_field: str,
 ) -> tuple[pd.DataFrame, dict[str, list[dict]]]:
-    """기타 제외 · 종가>=MA20 ETF를 섹터별로 수집"""
+    """기타 제외 · 종가>=선택 MA ETF를 섹터별로 수집"""
     del cache_key
     elements_map = get_etf_elements_map()
     sector_etfs: dict[str, list[dict]] = {}
@@ -382,12 +384,12 @@ def collect_close_ge_ma20_by_sector(
         except Exception:
             continue
         sector = str(payload.get("sector") or path.stem).strip()
-        if sector in EXCLUDED_MA20_SECTORS:
+        if sector in EXCLUDED_MA_FILTER_SECTORS:
             continue
 
         matched: list[dict] = []
         for item in payload.get("items") or []:
-            if not isinstance(item, dict) or not is_close_ge_ma20(item):
+            if not isinstance(item, dict) or not is_close_ge_ma(item, ma_field):
                 continue
             name = str(item.get("name", "")).strip()
             symbol = str(item.get("yahoosymbol", "")).strip()
@@ -419,8 +421,10 @@ def collect_close_ge_ma20_by_sector(
     return pd.DataFrame(count_rows), sector_etfs
 
 
-def _ma20_expand_content(sector: str, etfs: list[dict]) -> tuple[str, str]:
-    """종가>=MA20 펼침용 칩·차트 HTML"""
+def _ma_filter_expand_content(
+    sector: str, etfs: list[dict], ma_field: str
+) -> tuple[str, str]:
+    """종가>=선택 MA 펼침용 칩·차트 HTML"""
     if not etfs:
         return (
             '<span class="empty-msg">조건에 맞는 ETF가 없습니다.</span>',
@@ -439,7 +443,7 @@ def _ma20_expand_content(sector: str, etfs: list[dict]) -> tuple[str, str]:
         )
 
     try:
-        payload = filter_payload_close_ge_ma20(load_sector_payload(sector))
+        payload = filter_payload_close_ge_ma(load_sector_payload(sector), ma_field)
         chart = normalized_close_chart_svg(payload, color_map=color_map)
     except Exception as exc:
         chart = (
@@ -450,30 +454,35 @@ def _ma20_expand_content(sector: str, etfs: list[dict]) -> tuple[str, str]:
     return chips, chart
 
 
-def _ma20_expand_row_html(
-    sector: str,
-    expand_id: str,
-    sector_etfs: dict[str, list[dict]],
-) -> str:
-    """종가>=MA20 섹터 펼침 행"""
-    if not sector:
-        return ""
-    etfs = sector_etfs.get(sector, [])
-    chips_html, chart_html = _ma20_expand_content(sector, etfs)
-    return (
-        f'<tr id="{html.escape(expand_id, quote=True)}" '
-        f'class="etf-expand-row">'
-        f'<td colspan="4" class="expand-cell">'
-        f'<div class="detail-wrap">'
-        f'<div class="detail-title">'
-        f"{html.escape(sector)} · 종가 ≥ MA20 · 클릭 시 개별 분석"
-        f"</div>"
-        f'<div class="chip-row">{chips_html}</div>'
-        f"{chart_html}"
-        f"</div>"
-        f"</td>"
-        f"</tr>"
-    )
+def make_ma_filter_expand_row_html(ma_field: str):
+    """선택 MA 기준 펼침 행 빌더 생성"""
+
+    def _expand_row_html(
+        sector: str,
+        expand_id: str,
+        sector_etfs: dict[str, list[dict]],
+    ) -> str:
+        if not sector:
+            return ""
+        etfs = sector_etfs.get(sector, [])
+        chips_html, chart_html = _ma_filter_expand_content(sector, etfs, ma_field)
+        return (
+            f'<tr id="{html.escape(expand_id, quote=True)}" '
+            f'class="etf-expand-row">'
+            f'<td colspan="4" class="expand-cell">'
+            f'<div class="detail-wrap">'
+            f'<div class="detail-title">'
+            f"{html.escape(sector)} · 종가 ≥ {html.escape(ma_field)} · "
+            f"클릭 시 개별 분석"
+            f"</div>"
+            f'<div class="chip-row">{chips_html}</div>'
+            f"{chart_html}"
+            f"</div>"
+            f"</td>"
+            f"</tr>"
+        )
+
+    return _expand_row_html
 
 
 def build_normalized_close_chart_df(
@@ -1194,64 +1203,78 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
 
 
 def render_sector_count_grid() -> None:
-    """섹터별 ETF 종목 수 HTML 그리드 (펼침 행에 종목·차트 포함)"""
-    if not KOSPI_LIST_FILE.exists():
-        st.warning(f"종목 목록 파일을 찾을 수 없습니다: {KOSPI_LIST_FILE}")
+    """섹터별 ETF 종목 수 HTML 그리드 (이동평균선 필터 포함)"""
+    ma_col, _ = st.columns([1.2, 4.8])
+    with ma_col:
+        ma_filter = st.selectbox(
+            "이동평균선",
+            options=MA_FILTER_OPTIONS,
+            key="etf_ma_filter",
+        )
+
+    if ma_filter == "전체":
+        if not KOSPI_LIST_FILE.exists():
+            st.warning(f"종목 목록 파일을 찾을 수 없습니다: {KOSPI_LIST_FILE}")
+            return
+        try:
+            sector_df, sector_etfs = get_etf_sector_data()
+        except json.JSONDecodeError:
+            st.warning("종목 목록 JSON 파일 형식이 올바르지 않습니다.")
+            return
+        except Exception as exc:
+            st.error(f"섹터 집계 중 오류: {exc}")
+            return
+
+        if sector_df.empty:
+            st.info("표시할 ETF 섹터 데이터가 없습니다.")
+            return
+
+        grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
+        total_etf = int(sector_df["수"].sum())
+        st.caption(
+            f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · "
+            f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행"
+        )
+        with st.spinner("섹터 차트 준비 중..."):
+            grid_html = build_sector_grid_html(
+                grid_rows,
+                sector_etfs,
+                id_prefix="etf-exp",
+                expand_row_html=_sector_expand_row_html,
+            )
+        render_sector_grid_component(grid_html, pair_rows=len(grid_rows))
         return
 
-    try:
-        sector_df, sector_etfs = get_etf_sector_data()
-    except json.JSONDecodeError:
-        st.warning("종목 목록 JSON 파일 형식이 올바르지 않습니다.")
-        return
-    except Exception as exc:
-        st.error(f"섹터 집계 중 오류: {exc}")
-        return
-
-    if sector_df.empty:
-        st.info("표시할 ETF 섹터 데이터가 없습니다.")
-        return
-
-    grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
-    total_etf = int(sector_df["수"].sum())
-    st.caption(
-        f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · "
-        f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행"
-    )
-    with st.spinner("섹터 차트 준비 중..."):
-        grid_html = build_sector_grid_html(grid_rows, sector_etfs)
-    render_sector_grid_component(grid_html, pair_rows=len(grid_rows))
-
-
-def render_close_ge_ma20_grid() -> None:
-    """기타 제외 · 종가 ≥ MA20 ETF 섹터별 그리드"""
     if not ETF_DATA_DIR.exists():
         st.warning(f"ETF 데이터 폴더를 찾을 수 없습니다: {ETF_DATA_DIR}")
         return
 
     try:
-        sector_df, sector_etfs = collect_close_ge_ma20_by_sector(_etf_json_cache_key())
+        sector_df, sector_etfs = collect_close_ge_ma_by_sector(
+            _etf_json_cache_key(), ma_filter
+        )
     except Exception as exc:
-        st.error(f"종가≥MA20 집계 중 오류: {exc}")
+        st.error(f"종가≥{ma_filter} 집계 중 오류: {exc}")
         return
 
-    st.markdown("#### 종가 ≥ MA20 ETF")
     if sector_df.empty:
-        st.info("기타를 제외한 섹터에서 종가 ≥ MA20 인 ETF가 없습니다.")
+        st.info(
+            f"기타를 제외한 섹터에서 종가 ≥ {ma_filter} 인 ETF가 없습니다."
+        )
         return
 
     grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
     total_etf = int(sector_df["수"].sum())
     st.caption(
-        f"기타 제외 · 최신 종가 ≥ MA20 · 섹터 {len(sector_df):,}개 · "
+        f"기타 제외 · 최신 종가 ≥ {ma_filter} · 섹터 {len(sector_df):,}개 · "
         f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행"
     )
-    with st.spinner("종가≥MA20 차트 준비 중..."):
+    with st.spinner(f"종가≥{ma_filter} 차트 준비 중..."):
         grid_html = build_sector_grid_html(
             grid_rows,
             sector_etfs,
-            id_prefix="etf-ma20-exp",
-            expand_row_html=_ma20_expand_row_html,
+            id_prefix=f"etf-{ma_filter}-exp",
+            expand_row_html=make_ma_filter_expand_row_html(ma_filter),
         )
     render_sector_grid_component(grid_html, pair_rows=len(grid_rows))
 
@@ -1259,4 +1282,3 @@ def render_close_ge_ma20_grid() -> None:
 def render_page() -> None:
     """ETF 추세확인 Streamlit 페이지"""
     render_sector_count_grid()
-    render_close_ge_ma20_grid()
