@@ -884,10 +884,22 @@ def load_payload_from_path(path: Path) -> dict:
 
 
 def save_payload_to_path(path: Path, payload: dict) -> Path:
-    """섹터 JSON을 지정 경로에 저장"""
+    """섹터 JSON을 지정 경로에 원자적으로 저장 (임시 파일 → replace)"""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(payload, file, ensure_ascii=False, indent=2)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with tmp_path.open("w", encoding="utf-8") as file:
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+            file.flush()
+        tmp_path.replace(path)
+    except Exception:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        raise
     return path
 
 
@@ -1056,7 +1068,13 @@ def update_all_sector_json_files(
                 show_progress=True,
                 progress_label=label,
             )
-            save_payload_to_path(path, payload)
+            saved_path = save_payload_to_path(path, payload)
+            if not saved_path.exists() or saved_path.stat().st_size <= 0:
+                raise OSError(f"저장 후 파일이 비어 있습니다: {saved_path}")
+            status.success(
+                f"{label} · 저장 완료 ({saved_path.name}, "
+                f"{saved_path.stat().st_size:,} bytes)"
+            )
             summary["file_ok"] += 1
             summary["updated"] += int(stats.get("updated", 0))
             summary["skipped"] += int(stats.get("skipped", 0))
@@ -1066,6 +1084,8 @@ def update_all_sector_json_files(
                     "file": path.name,
                     "sector": sector_name,
                     "ok": True,
+                    "saved_path": str(saved_path.resolve()),
+                    "saved_bytes": int(saved_path.stat().st_size),
                     **stats,
                 }
             )
@@ -1101,6 +1121,26 @@ def update_all_sector_json_files(
     return summary
 
 
+def _queue_etf_data_update() -> None:
+    """다이얼로그 '업데이트 실행' on_click: 세션에 갱신 예약 (rerun 전에 확정)"""
+    raw = st.session_state.get("etf_update_lookback_input", UPDATE_LOOKBACK_DAYS)
+    try:
+        lookback = max(0, int(raw))
+    except (TypeError, ValueError):
+        lookback = UPDATE_LOOKBACK_DAYS
+    st.session_state["etf_pending_lookback_days"] = lookback
+    st.session_state["etf_update_lookback_ui"] = lookback
+    st.session_state["etf_do_update"] = True
+    st.session_state["etf_show_update_prompt"] = False
+
+
+def _cancel_etf_data_update_prompt() -> None:
+    """다이얼로그 취소 on_click"""
+    st.session_state["etf_show_update_prompt"] = False
+    st.session_state.pop("etf_pending_lookback_days", None)
+    st.session_state["etf_do_update"] = False
+
+
 def _prompt_update_lookback_days() -> None:
     """스킵 일수 입력 다이얼로그(알람)"""
     today = date.today()
@@ -1126,39 +1166,44 @@ def _prompt_update_lookback_days() -> None:
     )
     run_col, cancel_col = st.columns(2)
     with run_col:
-        if st.button("업데이트 실행", type="primary", use_container_width=True):
-            st.session_state["etf_pending_lookback_days"] = lookback
-            st.session_state["etf_update_lookback_ui"] = lookback
-            # 다이얼로그/프롬프트 즉시 닫기
-            st.session_state["etf_show_update_prompt"] = False
-            st.rerun()
+        st.button(
+            "업데이트 실행",
+            type="primary",
+            use_container_width=True,
+            key="etf_update_run_btn",
+            on_click=_queue_etf_data_update,
+        )
     with cancel_col:
-        if st.button("취소", use_container_width=True):
-            st.session_state["etf_show_update_prompt"] = False
-            st.session_state.pop("etf_pending_lookback_days", None)
-            st.rerun()
+        st.button(
+            "취소",
+            use_container_width=True,
+            key="etf_update_cancel_btn",
+            on_click=_cancel_etf_data_update_prompt,
+        )
 
 
 def render_data_update_button() -> None:
-    """그리드 상단 Data update 버튼 + 스킵 일수 입력 후 갱신"""
+    """그리드 상단 Data update 버튼 + 스킵 일수 입력 후 갱신·저장"""
     btn_col, info_col = st.columns([1.2, 6])
     with btn_col:
         clicked = st.button(
             "Data update",
             use_container_width=True,
             help="클릭 후 스킵 일수를 입력하면 data/etf/*.json 전체를 갱신합니다.",
+            key="etf_data_update_btn",
         )
     with info_col:
         st.caption("Data update: 스킵 일수 입력 후 모든 섹터 JSON을 API로 갱신·저장")
 
     if clicked:
         st.session_state["etf_show_update_prompt"] = True
+        st.session_state["etf_do_update"] = False
 
-    pending_lookback = st.session_state.get("etf_pending_lookback_days")
     show_prompt = bool(st.session_state.get("etf_show_update_prompt"))
+    do_update = bool(st.session_state.get("etf_do_update"))
 
-    # 실행이 예약되면 입력 창을 열지 않음(창 닫힘)
-    if show_prompt and pending_lookback is None:
+    # 실행 예약 시에는 입력 창을 열지 않음(창 닫힘)
+    if show_prompt and not do_update:
         dialog_fn = getattr(st, "dialog", None)
         if callable(dialog_fn):
 
@@ -1172,29 +1217,44 @@ def render_data_update_button() -> None:
                 st.markdown("**Data update · 스킵 일수 입력**")
                 _prompt_update_lookback_days()
 
-    if pending_lookback is None:
+    # 다이얼로그 on_click 이후 세션을 다시 읽어 갱신 실행 여부 확정
+    do_update = bool(st.session_state.get("etf_do_update"))
+    pending_lookback = st.session_state.get("etf_pending_lookback_days")
+    if not do_update or pending_lookback is None:
         return
 
-    # 창을 닫은 뒤 갱신 실행
+    st.session_state["etf_do_update"] = False
     st.session_state.pop("etf_pending_lookback_days", None)
     st.session_state["etf_show_update_prompt"] = False
+
     lookback_days = max(0, int(pending_lookback))
     compare_from = date.today() - timedelta(days=lookback_days)
     with st.spinner(
-        f"전체 섹터 ETF 데이터 갱신 중... "
+        f"전체 섹터 ETF 데이터 갱신·저장 중... "
         f"({compare_from.isoformat()} ~ {date.today().isoformat()}, 오늘 포함 재갱신)"
     ):
         summary = update_all_sector_json_files(lookback_days=lookback_days)
+
+    saved_dir = ETF_DATA_DIR.resolve()
     st.success(
         f"전체 갱신 완료 · "
         f"구간 {compare_from.isoformat()} ~ {date.today().isoformat()} "
         f"(입력 {lookback_days}일, 오늘 재갱신) · "
-        f"파일 {summary['file_ok']}/{summary['files']} · "
+        f"저장 {summary['file_ok']}/{summary['files']} · "
+        f"경로 `{saved_dir}` · "
         f"API 갱신 {summary['updated']} · "
         f"스킵 {summary['skipped']} · "
         f"종목 실패 {summary['failed']} · "
         f"파일 실패 {summary['file_failed']}"
     )
+    if summary.get("file_failed"):
+        failed = [
+            f"{row.get('file')}: {row.get('error', '')}"
+            for row in summary.get("details", [])
+            if not row.get("ok")
+        ]
+        if failed:
+            st.error("저장 실패 파일:\n- " + "\n- ".join(failed[:10]))
 
 
 def install_same_window_chip_navigation() -> None:
