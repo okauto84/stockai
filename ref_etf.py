@@ -21,6 +21,7 @@ ETF_DATA_DIR = ROOT_DIR / "data" / "etf"
 MAX_GRID_ROWS = 12
 UPDATE_LOOKBACK_DAYS = 3
 API_SLEEP_SECONDS = 1
+SECTOR_FILE_SLEEP_SECONDS = 2
 KOSPI_SYMBOL = "^KS11"
 GRID_COLUMNS = list(ref_stockanly.GRID_COLUMNS)
 CHART_HEIGHT = 360
@@ -456,9 +457,15 @@ def _merge_grid_by_date(
     return ordered[-ref_stockanly.ANALYSIS_DAYS :]
 
 
-def load_sector_payload(sector: str) -> dict:
-    """data/etf/{섹터}.json 로드"""
-    path = sector_json_path(sector)
+def list_etf_sector_json_files() -> list[Path]:
+    """data/etf/*.json 섹터 파일 목록"""
+    if not ETF_DATA_DIR.exists():
+        return []
+    return sorted(path for path in ETF_DATA_DIR.glob("*.json") if path.is_file())
+
+
+def load_payload_from_path(path: Path) -> dict:
+    """섹터 JSON 파일 경로에서 payload 로드"""
     if not path.exists():
         raise FileNotFoundError(f"섹터 JSON 파일이 없습니다: {path}")
     with path.open(encoding="utf-8") as file:
@@ -468,16 +475,30 @@ def load_sector_payload(sector: str) -> dict:
     return payload
 
 
-def save_sector_payload(sector: str, payload: dict) -> Path:
-    """섹터 JSON 저장"""
-    path = sector_json_path(sector)
+def save_payload_to_path(path: Path, payload: dict) -> Path:
+    """섹터 JSON을 지정 경로에 저장"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
         json.dump(payload, file, ensure_ascii=False, indent=2)
     return path
 
 
-def update_sector_payload_from_api(payload: dict) -> tuple[dict, dict]:
+def load_sector_payload(sector: str) -> dict:
+    """data/etf/{섹터}.json 로드"""
+    return load_payload_from_path(sector_json_path(sector))
+
+
+def save_sector_payload(sector: str, payload: dict) -> Path:
+    """섹터 JSON 저장"""
+    return save_payload_to_path(sector_json_path(sector), payload)
+
+
+def update_sector_payload_from_api(
+    payload: dict,
+    *,
+    show_progress: bool = True,
+    progress_label: str = "",
+) -> tuple[dict, dict]:
     """
     섹터 JSON의 모든 ETF에 대해 API로 날짜 key를 비교·갱신.
 
@@ -490,21 +511,25 @@ def update_sector_payload_from_api(payload: dict) -> tuple[dict, dict]:
     items = list(payload.get("items", []))
     errors = list(payload.get("errors", []))
     stats = {"requested": len(items), "updated": 0, "skipped": 0, "failed": 0}
+    label_prefix = f"{progress_label} · " if progress_label else ""
 
     if not items:
         return payload, stats
 
     kospi_chart = None
-    progress = st.progress(0.0, text="ETF 데이터 갱신 중...")
+    progress = None
+    if show_progress:
+        progress = st.progress(0.0, text=f"{label_prefix}ETF 데이터 갱신 중...")
 
     for index, item in enumerate(items):
         symbol = str(item.get("yahoosymbol", "")).strip()
         name = str(item.get("name", "")).strip() or symbol
         grid = list(item.get("grid") or [])
-        progress.progress(
-            (index + 1) / len(items),
-            text=f"ETF 갱신 [{index + 1}/{len(items)}] {name}",
-        )
+        if progress is not None:
+            progress.progress(
+                (index + 1) / len(items),
+                text=f"{label_prefix}ETF 갱신 [{index + 1}/{len(items)}] {name}",
+            )
 
         if not symbol:
             stats["failed"] += 1
@@ -551,7 +576,8 @@ def update_sector_payload_from_api(payload: dict) -> tuple[dict, dict]:
                 }
             )
 
-    progress.empty()
+    if progress is not None:
+        progress.empty()
 
     payload["items"] = items
     payload["errors"] = errors
@@ -564,6 +590,124 @@ def update_sector_payload_from_api(payload: dict) -> tuple[dict, dict]:
         "skipped": stats["skipped"],
     }
     return payload, stats
+
+
+def update_all_sector_json_files() -> dict:
+    """
+    data/etf/*.json 전체 섹터 파일을 순회하며 ETF 그리드 갱신·저장.
+
+    파일 단위 작업 사이에는 SECTOR_FILE_SLEEP_SECONDS(2초) 간격을 둔다.
+    """
+    files = list_etf_sector_json_files()
+    summary = {
+        "files": len(files),
+        "file_ok": 0,
+        "file_failed": 0,
+        "updated": 0,
+        "skipped": 0,
+        "failed": 0,
+        "details": [],
+    }
+    if not files:
+        st.warning(f"갱신할 섹터 JSON이 없습니다: {ETF_DATA_DIR}")
+        return summary
+
+    file_progress = st.progress(0.0, text="전체 섹터 JSON 갱신 중...")
+    status = st.empty()
+
+    for index, path in enumerate(files):
+        sector_name = path.stem
+        try:
+            payload = load_payload_from_path(path)
+            sector_name = str(payload.get("sector") or path.stem)
+            label = f"[{index + 1}/{len(files)}] {sector_name}"
+            status.info(f"{label} · {path.name} 갱신 중...")
+            file_progress.progress(
+                index / len(files),
+                text=f"{label} 처리 중...",
+            )
+            payload, stats = update_sector_payload_from_api(
+                payload,
+                show_progress=True,
+                progress_label=label,
+            )
+            save_payload_to_path(path, payload)
+            summary["file_ok"] += 1
+            summary["updated"] += int(stats.get("updated", 0))
+            summary["skipped"] += int(stats.get("skipped", 0))
+            summary["failed"] += int(stats.get("failed", 0))
+            summary["details"].append(
+                {
+                    "file": path.name,
+                    "sector": sector_name,
+                    "ok": True,
+                    **stats,
+                }
+            )
+        except Exception as exc:
+            summary["file_failed"] += 1
+            summary["details"].append(
+                {
+                    "file": path.name,
+                    "sector": sector_name,
+                    "ok": False,
+                    "error": str(exc),
+                }
+            )
+            status.error(f"{path.name} 갱신 실패: {exc}")
+
+        file_progress.progress(
+            (index + 1) / len(files),
+            text=f"[{index + 1}/{len(files)}] 완료",
+        )
+        if index < len(files) - 1:
+            status.info(
+                f"다음 섹터 파일까지 {SECTOR_FILE_SLEEP_SECONDS}초 대기..."
+            )
+            time.sleep(SECTOR_FILE_SLEEP_SECONDS)
+
+    file_progress.empty()
+    status.empty()
+
+    # 선택 섹터 캐시 무효화 (일괄 갱신 반영)
+    st.session_state.pop("etf_sector_payload", None)
+
+    return summary
+
+
+def render_data_update_button() -> None:
+    """그리드 상단 data update 버튼"""
+    btn_col, info_col = st.columns([1.2, 6])
+    with btn_col:
+        clicked = st.button(
+            "data update",
+            use_container_width=True,
+            help=(
+                f"data/etf/*.json 전체 갱신 · "
+                f"최근 {UPDATE_LOOKBACK_DAYS}일 이내는 API 생략 · "
+                f"파일 간 {SECTOR_FILE_SLEEP_SECONDS}초 대기"
+            ),
+        )
+    with info_col:
+        st.caption(
+            "data update: 모든 섹터 JSON을 API로 갱신·저장 "
+            f"(최근 {UPDATE_LOOKBACK_DAYS}일 이내 스킵 · "
+            f"파일 간 sleep {SECTOR_FILE_SLEEP_SECONDS}초)"
+        )
+
+    if not clicked:
+        return
+
+    with st.spinner("전체 섹터 ETF 데이터 갱신 중..."):
+        summary = update_all_sector_json_files()
+
+    st.success(
+        f"전체 갱신 완료 · 파일 {summary['file_ok']}/{summary['files']} · "
+        f"API 갱신 {summary['updated']} · "
+        f"스킵 {summary['skipped']} · "
+        f"종목 실패 {summary['failed']} · "
+        f"파일 실패 {summary['file_failed']}"
+    )
 
 
 def build_normalized_close_chart_df(payload: dict) -> pd.DataFrame:
@@ -610,8 +754,8 @@ def render_normalized_close_chart(payload: dict, sector: str) -> None:
 
     st.markdown(f"#### {html.escape(sector)} · 종가 정규화(0~1000) 추이")
     st.caption(
-        "섹터 내 ETF 종가를 종목별로 0~1000 구간으로 정규화 · "
-        "X축 날짜 · Y축 정규화 종가"
+        "섹터 JSON 기준 · ETF 종가 종목별 0~1000 정규화 · "
+        "X축 날짜 · Y축 종가"
     )
 
     chart = (
@@ -621,14 +765,14 @@ def render_normalized_close_chart(payload: dict, sector: str) -> None:
             x=alt.X("date:T", title="날짜", axis=alt.Axis(format="%m.%d")),
             y=alt.Y(
                 "종가_정규화:Q",
-                title="종가(정규화)",
+                title="종가",
                 scale=alt.Scale(domain=[0, 1000]),
             ),
             color=alt.Color("ETF:N", legend=alt.Legend(title="ETF", orient="bottom")),
             tooltip=[
                 alt.Tooltip("날짜:N", title="날짜"),
                 alt.Tooltip("ETF:N", title="ETF"),
-                alt.Tooltip("종가_정규화:Q", title="정규화 종가", format=".1f"),
+                alt.Tooltip("종가_정규화:Q", title="종가", format=".1f"),
             ],
         )
         .properties(height=CHART_HEIGHT)
@@ -649,8 +793,6 @@ def consume_sector_query() -> None:
     if str(st.query_params.get("etf_sector_clear", "")).strip() in {"1", "true", "True"}:
         st.session_state.pop("etf_selected_sector", None)
         st.session_state.pop("etf_sector_payload", None)
-        st.session_state.pop("etf_sector_update_stats", None)
-        st.session_state["etf_sector_needs_update"] = False
         _clear_query_keys("etf_sector_clear", "etf_sector")
         return
 
@@ -659,54 +801,33 @@ def consume_sector_query() -> None:
         return
 
     st.session_state["etf_selected_sector"] = sector
-    st.session_state["etf_sector_needs_update"] = True
+    # 섹터 변경 시 캐시된 payload 무효화 → JSON 재로드
+    cached = st.session_state.get("etf_sector_payload")
+    if not isinstance(cached, dict) or cached.get("sector") != sector:
+        st.session_state.pop("etf_sector_payload", None)
     _clear_query_keys("etf_sector", "etf_sector_clear")
 
 
 def ensure_selected_sector_payload() -> dict | None:
-    """선택된 섹터 JSON 로드·API 갱신·저장 후 payload 반환"""
+    """선택된 섹터 JSON만 읽어 payload 반환 (API 갱신 없음)"""
     sector = st.session_state.get("etf_selected_sector")
     if not sector:
         return None
 
-    needs_update = bool(st.session_state.get("etf_sector_needs_update"))
     cached = st.session_state.get("etf_sector_payload")
-    if (
-        not needs_update
-        and isinstance(cached, dict)
-        and cached.get("sector") == sector
-    ):
+    if isinstance(cached, dict) and cached.get("sector") == sector:
         return cached
 
     try:
         payload = load_sector_payload(sector)
     except FileNotFoundError as exc:
         st.warning(str(exc))
-        st.session_state["etf_sector_needs_update"] = False
         return None
     except Exception as exc:
         st.error(f"섹터 JSON 로드 오류: {exc}")
-        st.session_state["etf_sector_needs_update"] = False
         return None
 
-    if needs_update:
-        with st.spinner(f"'{sector}' 섹터 ETF 데이터 갱신 중..."):
-            try:
-                payload, stats = update_sector_payload_from_api(payload)
-                save_sector_payload(sector, payload)
-                st.session_state["etf_sector_update_stats"] = stats
-                st.caption(
-                    f"갱신 완료 · API 갱신 {stats['updated']} · "
-                    f"스킵(최근 {UPDATE_LOOKBACK_DAYS}일 이내) {stats['skipped']} · "
-                    f"실패 {stats['failed']}"
-                )
-            except Exception as exc:
-                st.error(f"섹터 데이터 갱신 오류: {exc}")
-                st.session_state["etf_sector_needs_update"] = False
-                return payload
-
     st.session_state["etf_sector_payload"] = payload
-    st.session_state["etf_sector_needs_update"] = False
     return payload
 
 
@@ -820,6 +941,8 @@ def render_sector_count_grid() -> None:
         st.info("표시할 ETF 섹터 데이터가 없습니다.")
         return
 
+    render_data_update_button()
+
     consume_sector_query()
     open_sector = st.session_state.get("etf_selected_sector")
     open_payload = ensure_selected_sector_payload() if open_sector else None
@@ -829,7 +952,7 @@ def render_sector_count_grid() -> None:
     st.caption(
         f"ETF 섹터별 종목 수 · 섹터 {len(sector_df):,}개 · "
         f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행 · "
-        "섹터 클릭 시 JSON 갱신·종목 목록·정규화 차트 · "
+        "섹터 클릭 시 JSON 로드·종목 목록·정규화 차트 · "
         "종목 클릭 시 개별 종목 분석"
     )
     st.markdown(
