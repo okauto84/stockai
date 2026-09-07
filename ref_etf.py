@@ -292,7 +292,6 @@ def normalized_close_chart_svg(
 
     polylines: list[str] = []
     hover_points: list[str] = []
-    legend_items: list[str] = []
     for idx, etf in enumerate(etfs):
         color = color_map.get(etf) or _CHART_COLORS[idx % len(_CHART_COLORS)]
         sub = chart_df[chart_df["ETF"] == etf].sort_values("date")
@@ -305,28 +304,19 @@ def normalized_close_chart_svg(
             y = top + plot_h * (1.0 - (y_val / 1000.0))
             points.append(f"{x:.2f},{y:.2f}")
             date_str = str(row.get("날짜") or pd.Timestamp(row["date"]).strftime("%Y-%m-%d"))
-            tip = html.escape(f"{date_str}\n{etf}\n{y_val:.1f}")
             hover_points.append(
                 f'<circle class="etf-hover-point" cx="{x:.2f}" cy="{y:.2f}" '
                 f'r="6" fill="transparent" stroke="none" '
                 f'data-date="{html.escape(date_str, quote=True)}" '
                 f'data-name="{html.escape(str(etf), quote=True)}" '
                 f'data-value="{y_val:.1f}" '
-                f'data-color="{html.escape(color, quote=True)}">'
-                f"<title>{tip}</title>"
-                f"</circle>"
+                f'data-color="{html.escape(color, quote=True)}" />'
             )
         if len(points) < 2:
             continue
         polylines.append(
             f'<polyline fill="none" stroke="{color}" stroke-width="1.4" '
             f'points="{" ".join(points)}" />'
-        )
-        legend_items.append(
-            f'<span class="chart-legend-item">'
-            f'<i style="background:{color}"></i>'
-            f"{html.escape(str(etf))}"
-            f"</span>"
         )
 
     # X축 눈금: 최근 70일 구간에 촘촘히 표시
@@ -384,15 +374,10 @@ def normalized_close_chart_svg(
         f'text-anchor="middle" font-size="11" fill="#64748b">날짜</text>'
         f"</svg>"
     )
-    legend = (
-        f'<div class="etf-chart-legend">{"".join(legend_items)}</div>'
-        if legend_items
-        else ""
-    )
     return (
         f'<div class="etf-chart-wrap">'
         f'<div class="etf-chart-title">종가 정규화 (0~1000) · 최근 {CHART_LOOKBACK_DAYS}일 · X=날짜 · Y=종가</div>'
-        f'<div class="etf-chart-body">{svg}{legend}</div>'
+        f'<div class="etf-chart-body">{svg}</div>'
         f"</div>"
     )
 
@@ -645,58 +630,6 @@ def build_sector_grid_html(
   }}
   .etf-hover-point {{
     cursor: crosshair;
-  }}
-  .etf-chart-legend {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 10px;
-    margin-top: 8px;
-    max-height: 120px;
-    overflow-y: auto;
-  }}
-  .chart-legend-item {{
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 10px;
-    color: #334155;
-    white-space: nowrap;
-  }}
-  .chart-legend-item i {{
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-  }}
-  .etf-chart-tooltip {{
-    position: fixed;
-    z-index: 10000;
-    pointer-events: none;
-    display: none;
-    min-width: 140px;
-    padding: 8px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: rgba(15, 23, 42, 0.92);
-    color: #f8fafc;
-    font-size: 11px;
-    line-height: 1.45;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
-  }}
-  .etf-chart-tooltip .tip-row {{
-    display: flex;
-    gap: 6px;
-  }}
-  .etf-chart-tooltip .tip-label {{
-    color: #94a3b8;
-    min-width: 3.2rem;
-  }}
-  .etf-chart-tooltip .tip-swatch {{
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
-    margin-top: 4px;
   }}
 </style>
 <div class="etf-sector-grid-wrap">
