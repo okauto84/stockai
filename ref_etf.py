@@ -18,7 +18,7 @@ MAX_GRID_ROWS = 12
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거·구성종목 툴팁 등 UI 변경 시 증가)
-CHART_CACHE_VERSION = 7
+CHART_CACHE_VERSION = 8
 
 
 def sector_to_filename(sector: str) -> str:
@@ -43,8 +43,9 @@ def sector_json_path(sector: str) -> Path:
 
 
 @st.cache_data
-def load_etf_elements_by_symbol() -> dict[str, list[str]]:
-    """야후심볼 → ETF 구성종목명 목록"""
+def load_etf_elements_by_symbol(mtime: float) -> dict[str, list[str]]:
+    """야후심볼·종목코드 → ETF 구성종목명 목록 (mtime은 캐시 무효화용)"""
+    del mtime  # cache key only
     with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
         payload = json.load(file)
 
@@ -54,25 +55,49 @@ def load_etf_elements_by_symbol() -> dict[str, list[str]]:
             if item.get("ETF") != "Y":
                 continue
             symbol = str(item.get("yahoosymbol", "")).strip()
-            if not symbol:
-                continue
+            code = str(item.get("code", "")).strip()
             raw = item.get("elements")
-            if isinstance(raw, list):
-                elements_map[symbol] = [
-                    str(name).strip() for name in raw if str(name).strip()
-                ]
-            else:
-                elements_map[symbol] = []
+            names = (
+                [str(name).strip() for name in raw if str(name).strip()]
+                if isinstance(raw, list)
+                else []
+            )
+            if symbol:
+                elements_map[symbol] = names
+                elements_map[symbol.upper()] = names
+            if code:
+                elements_map[code] = names
+                elements_map[code.upper()] = names
     return elements_map
 
 
+def get_etf_elements_map() -> dict[str, list[str]]:
+    """kospilist.json 기준 최신 구성종목 맵"""
+    mtime = KOSPI_LIST_FILE.stat().st_mtime if KOSPI_LIST_FILE.exists() else 0.0
+    return load_etf_elements_by_symbol(mtime)
+
+
+def lookup_etf_elements(
+    elements_map: dict[str, list[str]],
+    *,
+    symbol: str = "",
+    code: str = "",
+) -> list[str]:
+    """심볼·코드로 구성종목 조회"""
+    for key in (symbol, symbol.upper(), code, code.upper()):
+        if key and key in elements_map:
+            return elements_map[key]
+    return []
+
+
 @st.cache_data
-def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict]]]:
+def load_etf_sector_data(mtime: float) -> tuple[pd.DataFrame, dict[str, list[dict]]]:
     """kospilist.json에서 ETF 섹터 집계 및 섹터별 종목(이름·심볼) 목록 로드"""
+    del mtime  # cache key only
     with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
         payload = json.load(file)
 
-    elements_map = load_etf_elements_by_symbol()
+    elements_map = get_etf_elements_map()
     sector_etfs: dict[str, list[dict]] = {}
     seen: dict[str, set[str]] = {}
     for items in payload.get("markets", {}).values():
@@ -94,7 +119,9 @@ def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict]]]:
                     "name": name,
                     "yahoosymbol": symbol,
                     "code": code,
-                    "elements": elements_map.get(symbol, []),
+                    "elements": lookup_etf_elements(
+                        elements_map, symbol=symbol, code=code
+                    ),
                 }
             )
 
@@ -109,6 +136,12 @@ def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict]]]:
         )
     ]
     return pd.DataFrame(count_rows), sector_etfs
+
+
+def get_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict]]]:
+    """kospilist.json mtime 기준 최신 섹터 집계"""
+    mtime = KOSPI_LIST_FILE.stat().st_mtime if KOSPI_LIST_FILE.exists() else 0.0
+    return load_etf_sector_data(mtime)
 
 
 def build_sector_grid_rows(
@@ -194,9 +227,15 @@ def _stock_chip(
     sector_q = html.escape(sector, quote=True)
     keyword_q = html.escape(keyword, quote=True)
     elements_tip = _format_elements_tooltip(etf.get("elements"))
+    # title_q: kospilist.json elements 전체 목록 (없으면 기본 안내)
     title_q = html.escape(
         elements_tip or f"{symbol} 분석 보기",
         quote=True,
+    )
+    elements_attr = (
+        f' data-elements="{html.escape(elements_tip, quote=True)}"'
+        if elements_tip
+        else ""
     )
     swatch = ""
     if color:
@@ -206,7 +245,7 @@ def _stock_chip(
     return (
         f'<a class="name-chip" href="{href_q}" target="_top" rel="noopener" '
         f'data-symbol="{symbol_q}" data-sector="{sector_q}" '
-        f'data-keyword="{keyword_q}" title="{title_q}">'
+        f'data-keyword="{keyword_q}"{elements_attr} title="{title_q}">'
         f"{swatch}{name}</a>"
     )
 
@@ -242,7 +281,8 @@ def _sector_toggle_cell_html(sector: str, expand_id: str) -> str:
 
 def _chips_from_payload(payload: dict, sector: str) -> list[dict]:
     """섹터 JSON payload에서 칩용 ETF 목록 생성"""
-    elements_map = load_etf_elements_by_symbol()
+    del sector  # 호출 호환용
+    elements_map = get_etf_elements_map()
     chips: list[dict] = []
     for item in payload.get("items", []):
         name = str(item.get("name", "")).strip()
@@ -255,7 +295,9 @@ def _chips_from_payload(payload: dict, sector: str) -> list[dict]:
                 "name": name,
                 "yahoosymbol": symbol,
                 "code": code,
-                "elements": elements_map.get(symbol, []),
+                "elements": lookup_etf_elements(
+                    elements_map, symbol=symbol, code=code
+                ),
             }
         )
     chips.sort(key=lambda row: row["name"])
@@ -434,10 +476,13 @@ def normalized_close_chart_svg(
 
 @st.cache_data(show_spinner=False)
 def _cached_sector_expand_content(
-    sector: str, mtime: float, cache_version: int = CHART_CACHE_VERSION
+    sector: str,
+    mtime: float,
+    kospi_mtime: float,
+    cache_version: int = CHART_CACHE_VERSION,
 ) -> tuple[str, str]:
-    """섹터 JSON 기준 칩 HTML·차트 SVG 캐시 (mtime·version으로 무효화)"""
-    del mtime, cache_version  # cache key only
+    """섹터 JSON 기준 칩 HTML·차트 SVG 캐시 (mtime·kospilist·version으로 무효화)"""
+    del mtime, kospi_mtime, cache_version  # cache key only
     try:
         payload = load_sector_payload(sector)
     except FileNotFoundError:
@@ -463,7 +508,12 @@ def _sector_expand_content(sector: str) -> tuple[str, str]:
     """섹터 펼침 영역용 칩·차트 HTML"""
     path = sector_json_path(sector)
     mtime = path.stat().st_mtime if path.exists() else 0.0
-    return _cached_sector_expand_content(sector, mtime, CHART_CACHE_VERSION)
+    kospi_mtime = (
+        KOSPI_LIST_FILE.stat().st_mtime if KOSPI_LIST_FILE.exists() else 0.0
+    )
+    return _cached_sector_expand_content(
+        sector, mtime, kospi_mtime, CHART_CACHE_VERSION
+    )
 
 
 def _sector_expand_row_html(
@@ -876,8 +926,16 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
 
           const tip = doc.createElement('div');
           tip.id = 'etf-chart-tooltip';
-          tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;display:none;min-width:140px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(15,23,42,0.92);color:#f8fafc;font-size:11px;line-height:1.45;box-shadow:0 4px 14px rgba(15,23,42,0.2)';
+          tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;display:none;min-width:140px;max-width:360px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(15,23,42,0.92);color:#f8fafc;font-size:11px;line-height:1.45;box-shadow:0 4px 14px rgba(15,23,42,0.2);white-space:normal;word-break:keep-all';
           doc.body.appendChild(tip);
+
+          function escapeHtml(text) {{
+            return String(text || '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;');
+          }}
 
           function placeTip(x, y) {{
             tip.style.display = 'block';
@@ -897,22 +955,49 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
           doc.addEventListener('mousemove', function (e) {{
             const pt = e.target && e.target.closest
               ? e.target.closest('circle.etf-hover-point') : null;
-            if (!pt) {{
-              tip.style.display = 'none';
+            if (pt) {{
+              const color = pt.getAttribute('data-color') || '#94a3b8';
+              tip.innerHTML =
+                '<div style="display:flex;gap:6px"><span style="width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span><div>' +
+                '<div>날짜 ' + (pt.getAttribute('data-date') || '') + '</div>' +
+                '<div>종목 ' + (pt.getAttribute('data-name') || '') + '</div>' +
+                '<div>정규화 ' + (pt.getAttribute('data-value') || '') + '</div></div></div>';
+              placeTip(e.clientX, e.clientY);
+              pt.setAttribute('fill', color);
+              pt.setAttribute('fill-opacity', '0.35');
+              pt.setAttribute('stroke', color);
+              pt.setAttribute('stroke-width', '1.5');
+              pt.setAttribute('r', '5');
               return;
             }}
-            const color = pt.getAttribute('data-color') || '#94a3b8';
-            tip.innerHTML =
-              '<div style="display:flex;gap:6px"><span style="width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span><div>' +
-              '<div>날짜 ' + (pt.getAttribute('data-date') || '') + '</div>' +
-              '<div>종목 ' + (pt.getAttribute('data-name') || '') + '</div>' +
-              '<div>정규화 ' + (pt.getAttribute('data-value') || '') + '</div></div></div>';
-            placeTip(e.clientX, e.clientY);
-            pt.setAttribute('fill', color);
-            pt.setAttribute('fill-opacity', '0.35');
-            pt.setAttribute('stroke', color);
-            pt.setAttribute('stroke-width', '1.5');
-            pt.setAttribute('r', '5');
+
+            const chip = e.target && e.target.closest
+              ? e.target.closest('a.name-chip[data-symbol]') : null;
+            if (chip) {{
+              const elements = (chip.getAttribute('data-elements') || '').trim();
+              const titleText = (chip.getAttribute('title') || '').trim();
+              const text = elements || titleText;
+              if (text) {{
+                // 커스텀 툴팁 표시 중에는 브라우저 기본 title 중복을 막음
+                if (!chip.getAttribute('data-title-backup')) {{
+                  chip.setAttribute('data-title-backup', titleText);
+                  chip.removeAttribute('title');
+                }}
+                tip.innerHTML =
+                  '<div style="font-weight:600;margin-bottom:4px">구성종목</div>' +
+                  '<div>' + escapeHtml(text) + '</div>';
+                placeTip(e.clientX, e.clientY);
+                return;
+              }}
+            }}
+
+            tip.style.display = 'none';
+            doc.querySelectorAll('a.name-chip[data-title-backup]').forEach(function (el) {{
+              if (!el.getAttribute('title')) {{
+                el.setAttribute('title', el.getAttribute('data-title-backup') || '');
+              }}
+              el.removeAttribute('data-title-backup');
+            }});
           }});
 
           doc.addEventListener('mouseout', function (e) {{
@@ -940,7 +1025,7 @@ def render_sector_count_grid() -> None:
         return
 
     try:
-        sector_df, sector_etfs = load_etf_sector_data()
+        sector_df, sector_etfs = get_etf_sector_data()
     except json.JSONDecodeError:
         st.warning("종목 목록 JSON 파일 형식이 올바르지 않습니다.")
         return
