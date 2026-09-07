@@ -1,6 +1,6 @@
 # KOSPI/KOSDAQ 종목 목록 생성 (`kospilist_dataproc.py`)
 
-코스피·코스닥 상장 종목과 ETF 정보를 수집·병합하고, ETF에는 섹터를 분류한 뒤 `kospilist.json`으로 저장하는 스크립트입니다.
+코스피·코스닥 상장 종목과 ETF 정보를 수집·병합하고, ETF에는 섹터 분류와 **구성종목(`elements`)** 을 채운 뒤 `kospilist.json`으로 저장하는 스크립트입니다.
 
 ---
 
@@ -8,7 +8,7 @@
 
 ```
 data/kospilist/
-├── kospilist_dataproc.py   # 종목 목록 수집·변환·섹터 분류 스크립트
+├── kospilist_dataproc.py   # 종목 목록 수집·변환·섹터 분류·구성종목 수집 스크립트
 ├── kospilist.json          # 생성된 종목 목록 JSON (출력)
 └── README.md               # 본 문서
 ```
@@ -20,15 +20,16 @@ data/kospilist/
 | 구분 | 내용 |
 |------|------|
 | **입력(Input)** | 외부 API/라이브러리 응답 (파일 입력 없음) |
-| **중간 데이터** | `pandas.DataFrame` (Code, Name, Market, yahoo_symbol, ETF) |
+| **중간 데이터** | `pandas.DataFrame` (Code, Name, Market, yahoo_symbol, ETF) + ETF 코드별 `elements` 맵 |
 | **출력(Output)** | `data/kospilist/kospilist.json` |
-| **콘솔** | `저장 완료: ... (KOSPI N개, KOSDAQ N개, ETF N개)` |
+| **콘솔** | 구성종목 수집 진행 로그 → `저장 완료: ... (KOSPI N개, KOSDAQ N개, ETF N개)` |
 
 ### 입력 소스
 
 | 소스 | 역할 | 샘플 |
 |------|------|------|
 | **Naver Finance ETF API** | ETF 코드·종목명 | `{ "itemcode": "069500", "itemname": "KODEX 200" }` |
+| **Naver Finance ETF 구성종목 API** | ETF별 편입 종목명 목록 | `{ "itemName": "삼성전자", ... }` (페이지네이션) |
 | **FinanceDataReader `StockListing("KRX")`** | KOSPI/KOSDAQ 상장 종목 | `Code=005930`, `Name=삼성전자`, `Market=KOSPI` |
 | **Yahoo 심볼 규칙** | 시장 접미사 | KOSPI → `.KS`, KOSDAQ → `.KQ` |
 
@@ -36,8 +37,8 @@ data/kospilist/
 
 ```json
 {
-  "updated_at": "2026-09-06T15:32:48Z",
-  "source": "FinanceDataReader(KRX) + Naver Finance ETF list + Yahoo Finance symbol mapping",
+  "updated_at": "2026-09-07T07:16:41Z",
+  "source": "FinanceDataReader(KRX) + Naver Finance ETF list + Naver Finance ETF constituent list + Yahoo Finance symbol mapping",
   "markets": {
     "KOSPI": [
       {
@@ -45,21 +46,24 @@ data/kospilist/
         "name": "삼성전자",
         "yahoosymbol": "005930.KS",
         "ETF": "N",
-        "sector": ""
+        "sector": "",
+        "elements": ""
       },
       {
         "code": "069500",
         "name": "KODEX 200",
         "yahoosymbol": "069500.KS",
         "ETF": "Y",
-        "sector": "기타"
+        "sector": "기타",
+        "elements": ["삼성전자", "SK하이닉스", "SK스퀘어", "삼성바이오로직스", "현대차"]
       },
       {
         "code": "0000Z0",
         "name": "RISE 바이오TOP10액티브",
         "yahoosymbol": "0000Z0.KS",
         "ETF": "Y",
-        "sector": "바이오"
+        "sector": "바이오",
+        "elements": ["셀트리온", "삼성바이오로직스", "..."]
       }
     ],
     "KOSDAQ": [
@@ -68,7 +72,8 @@ data/kospilist/
         "name": "카카오",
         "yahoosymbol": "035720.KQ",
         "ETF": "N",
-        "sector": ""
+        "sector": "",
+        "elements": ""
       }
     ]
   },
@@ -81,7 +86,8 @@ data/kospilist/
 }
 ```
 
-> 일반 주식(`ETF=N`)의 `sector`는 빈 문자열입니다. ETF(`ETF=Y`)만 섹터 문자열이 채워집니다.
+> - 일반 주식(`ETF=N`): `sector=""`, `elements=""` (공백 문자열)
+> - ETF(`ETF=Y`): `sector`는 섹터 문자열, `elements`는 구성종목명 **list** (조회 실패·없음이면 `[]`)
 
 ---
 
@@ -96,9 +102,11 @@ data/kospilist/
         ↓
 4. KRX에 없는 ETF만 병합
         ↓
-5. 시장별 레코드 생성 (ETF면 섹터 분류)
+5. ETF 구성종목 수집 (Naver constituent API, 병렬)
         ↓
-6. JSON 페이로드 구성 → kospilist.json 저장
+6. 시장별 레코드 생성 (ETF면 섹터 분류 + elements 매핑)
+        ↓
+7. JSON 페이로드 구성 → kospilist.json 저장
 ```
 
 `save_stock_list()`가 위 순서를 한 번에 실행합니다.
@@ -213,11 +221,72 @@ data/kospilist/
 
 ---
 
-### Step 5. 섹터 분류 (ETF만)
+### Step 5. ETF 구성종목 수집 (`elements`)
+
+병합 결과에서 `ETF == "Y"`인 코드만 대상으로, Naver 구성종목 API를 호출해 종목명 리스트를 만듭니다.
+
+**API:**  
+`https://m.stock.naver.com/front-api/stock/domestic/etf/constituent/list?code={종목코드}`
+
+**응답 개념 샘플:**
+
+```json
+{
+  "isSuccess": true,
+  "result": {
+    "totalCount": 202,
+    "hasNext": true,
+    "nextCursor": "...",
+    "result": [
+      { "itemCode": "005930", "itemName": "삼성전자", "constituentWeight": 33.46 },
+      { "itemCode": "000660", "itemName": "SK하이닉스", "constituentWeight": 26.26 }
+    ]
+  }
+}
+```
+
+#### 5-1. `fetch_etf_elements(code)` — 단일 ETF 구성종목
+
+| 항목 | 내용 |
+|------|------|
+| 페이지 크기 | API 기본 약 10건/페이지 |
+| 페이지네이션 | `hasNext` / `nextCursor`로 전체 수집 |
+| 저장 값 | `itemName` 문자열 리스트 (코드가 없는 현금·채권명 등도 이름 있으면 포함) |
+| 페이지 간 대기 | `ETF_ELEMENTS_SLEEP_SECONDS` (기본 `0.05`) |
+
+**출력 샘플 (`069500` KODEX 200):**
+
+```python
+["삼성전자", "SK하이닉스", "SK스퀘어", "삼성바이오로직스", "현대차", ...]  # 예: 202건
+```
+
+#### 5-2. `fetch_etf_elements_map(etf_codes)` — 전체 ETF 병렬 수집
+
+| 항목 | 내용 |
+|------|------|
+| 병렬 | `ThreadPoolExecutor` (`ETF_ELEMENTS_WORKERS`, 기본 `8`) |
+| 실패 시 | 해당 코드는 `[]`로 넣고 경고 로그 후 계속 |
+| 진행 로그 | `구성종목 수집 진행: N/총개수` (1·50단위·마지막) |
+
+**출력 샘플:**
+
+```python
+{
+  "069500": ["삼성전자", "SK하이닉스", ...],
+  "0000Z0": ["셀트리온", ...],
+  ...
+}
+```
+
+> 구성종목 수집은 ETF 수·편입 종목 수에 따라 수 분 걸릴 수 있습니다.
+
+---
+
+### Step 6. 섹터 분류 (ETF만)
 
 시장별 JSON을 만들 때 `ETF == "Y"`인 종목에만 `get_accurate_sector(code, name)`를 호출합니다.
 
-#### 5-1. `get_accurate_sector(code, name)` 우선순위
+#### 6-1. `get_accurate_sector(code, name)` 우선순위
 
 | 순서 | 방식 | 샘플 입력 | 샘플 출력 |
 |------|------|-----------|-----------|
@@ -226,7 +295,7 @@ data/kospilist/
 | 3 | 16대 섹터 키워드 | 이름에 `"바이오"` | `"바이오"` |
 | 4 | 매칭 실패 | 지수/채권형 등 | `"기타"` |
 
-#### 5-2. `is_korea_related_etf(name)` — 해외 ETF 필터
+#### 6-2. `is_korea_related_etf(name)` — 해외 ETF 필터
 
 섹터가 `"기타"`가 아닌데도 이름에 해외 키워드(미국, NASDAQ, 엔비디아 등)만 있고 한국 관련 키워드가 없으면 → 최종 `sector`를 `"기타"`로 바꿉니다.
 
@@ -242,9 +311,9 @@ data/kospilist/
 
 ---
 
-### Step 6. `build_market_records(df, market)` — 시장별 JSON 레코드
+### Step 7. `build_market_records(df, market, elements_map)` — 시장별 JSON 레코드
 
-**입력:** 병합 DataFrame + `"KOSPI"` 또는 `"KOSDAQ"`
+**입력:** 병합 DataFrame + `"KOSPI"` / `"KOSDAQ"` + Step 5의 `elements_map`
 
 **출력 레코드 스키마:**
 
@@ -255,17 +324,18 @@ data/kospilist/
 | `yahoosymbol` | Yahoo 심볼 | `"005930.KS"` |
 | `ETF` | ETF 여부 | `"Y"` / `"N"` |
 | `sector` | ETF만 분류, 일반주는 `""` | `"바이오"` / `""` |
+| `elements` | ETF면 구성종목 **list**, 일반주면 `""` | `["삼성전자", ...]` / `""` |
 
 ---
 
-### Step 7. `build_stock_list_payload(df)` → `save_stock_list()`
+### Step 8. `build_stock_list_payload(df, elements_map)` → `save_stock_list()`
 
 **페이로드 구조:**
 
 ```json
 {
   "updated_at": "UTC ISO8601",
-  "source": "데이터 출처 설명 문자열",
+  "source": "FinanceDataReader(KRX) + Naver Finance ETF list + Naver Finance ETF constituent list + Yahoo Finance symbol mapping",
   "markets": { "KOSPI": [...], "KOSDAQ": [...] },
   "counts": { "KOSPI": N, "KOSDAQ": N, "ETF": N, "total": N }
 }
@@ -303,6 +373,11 @@ py data\kospilist\kospilist_dataproc.py
 - 콘솔 예:
 
 ```
+ETF 구성종목 수집 시작 (1167개)
+  구성종목 수집 진행: 1/1167
+  구성종목 수집 진행: 50/1167
+  ...
+  구성종목 수집 진행: 1167/1167
 저장 완료: D:\myproject\stockai\data\kospilist\kospilist.json (KOSPI 2110개, KOSDAQ 1772개, ETF 1167개)
 ```
 
@@ -314,7 +389,7 @@ py data\kospilist\kospilist_dataproc.py
 |------|---------|------|
 | KOSPI | 2,110 | 일반 종목 + ETF |
 | KOSDAQ | 1,772 | 일반 종목 |
-| ETF (`Y`) | 1,167 | ETF 상품 |
+| ETF (`Y`) | 1,167 | ETF 상품 (`elements` list 포함) |
 | **합계** | **3,882** | 전체 레코드 |
 
 ---
@@ -324,8 +399,10 @@ py data\kospilist\kospilist_dataproc.py
 - **SSL 검증:** Naver API 호출 시 `SSL_VERIFY = False` (로컬 SSL 이슈 대응)
 - **ETF 시장:** Naver API에 시장 정보가 없어, 병합으로 추가된 ETF는 모두 `KOSPI`에 넣음
 - **섹터:** 일반 주식은 `sector=""`, ETF만 키워드/전문가맵으로 분류
+- **구성종목(`elements`):** 일반 주식은 `""`, ETF는 종목명 list. 채권·현금성 자산 등은 코드 없이 이름만 올 수 있음
+- **병렬·대기:** `ETF_ELEMENTS_WORKERS=8`, `ETF_ELEMENTS_SLEEP_SECONDS=0.05` (페이지·부하 조절용)
 - **ETN:** 대상에서 제외
-- **재실행:** `kospilist.json`을 덮어쓰며 `updated_at`을 갱신
+- **재실행:** `kospilist.json`을 덮어쓰며 `updated_at`을 갱신. 구성종목까지 다시 조회하므로 전체 실행 시간이 길어질 수 있음
 
 ---
 
@@ -333,6 +410,7 @@ py data\kospilist\kospilist_dataproc.py
 
 | 파일 | 역할 |
 |------|------|
-| `kospilist_dataproc.py` | 종목 수집·병합·섹터 분류·저장 |
-| `kospilist.json` | 최종 종목 목록 |
+| `kospilist_dataproc.py` | 종목 수집·병합·섹터 분류·구성종목 수집·저장 |
+| `kospilist.json` | 최종 종목 목록 (`sector`, `elements` 포함) |
 | `../../requirements.txt` | 프로젝트 의존성 |
+| `../../ref_etf.py` / `../../ref_stockanly.py` | `elements`를 툴팁·그리드 표시에 사용 |

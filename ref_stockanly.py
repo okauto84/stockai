@@ -14,6 +14,7 @@ KOSPI_LIST_FILE = (
 ANALYSIS_DAYS = 150
 GRID_VISIBLE_ROWS = 7
 STOCK_LIST_VISIBLE_ROWS = 5
+STOCK_LIST_GRID_COLUMNS = ["시장", "종목코드", "종목명", "ETF", "섹터", "구성종목"]
 RS_WINDOW = 20
 GRID_COLUMNS = [
     "날짜",
@@ -318,6 +319,7 @@ def load_stock_list() -> pd.DataFrame:
     records = []
     for market, items in payload.get("markets", {}).items():
         for item in items:
+            elements = normalize_elements(item.get("elements"))
             records.append(
                 {
                     "시장": market,
@@ -326,10 +328,50 @@ def load_stock_list() -> pd.DataFrame:
                     "야후심볼": item["yahoosymbol"],
                     "ETF": item["ETF"],
                     "섹터": item.get("sector", "") or "",
+                    "구성종목목록": elements,
+                    "구성종목": format_elements_cell(elements),
                 }
             )
 
     return pd.DataFrame(records)
+
+
+def normalize_elements(raw) -> list[str]:
+    """JSON elements 값을 종목명 리스트로 정규화"""
+    if isinstance(raw, list):
+        return [str(name).strip() for name in raw if str(name).strip()]
+    return []
+
+
+def format_elements_cell(elements: list[str]) -> str:
+    """구성종목 그리드 셀 값 (3건 이상이면 ... 표시, 호버 시 전체 노출)"""
+    if not elements:
+        return ""
+    full = ", ".join(elements)
+    if len(elements) < 3:
+        return full
+    short = ", ".join(elements[:2]) + ", ..."
+    # Streamlit(Glide) 호버 툴팁은 셀 원본 값을 보여주므로,
+    # 앞부분은 화면용(...), 뒷부분은 툴팁용 전체 목록으로 구성
+    return f"{short} | {full}"
+
+
+def stock_list_column_config() -> dict:
+    """종목 목록 그리드 컬럼 폭·숨김 설정"""
+    return {
+        "시장": st.column_config.TextColumn("시장", width=70),
+        "종목코드": st.column_config.TextColumn("종목코드", width=85),
+        "종목명": st.column_config.TextColumn("종목명", width=160),
+        "ETF": st.column_config.TextColumn("ETF", width=50),
+        "섹터": st.column_config.TextColumn("섹터", width=95),
+        "구성종목": st.column_config.TextColumn(
+            "구성종목",
+            width=220,
+            help="3개 이상이면 '...'으로 표시되며, 마우스 오버 시 전체 구성종목을 확인할 수 있습니다.",
+        ),
+        "야후심볼": None,
+        "구성종목목록": None,
+    }
 
 
 def get_sector_options(stock_df: pd.DataFrame) -> list[str]:
@@ -409,10 +451,14 @@ def filter_stock_list(
 
     if keyword:
         keyword_upper = keyword.upper()
+        elements_text = filtered_df["구성종목목록"].map(
+            lambda items: ", ".join(items) if isinstance(items, list) else ""
+        )
         filtered_df = filtered_df[
             filtered_df["종목코드"].str.contains(keyword_upper, na=False)
             | filtered_df["종목명"].str.contains(keyword, na=False)
             | filtered_df["야후심볼"].str.contains(keyword_upper, na=False)
+            | elements_text.str.contains(keyword, na=False)
         ]
 
     return filtered_df.reset_index(drop=True)
@@ -541,8 +587,9 @@ def render_stock_list_grid() -> None:
         st.session_state["stock_list_sector_applied"],
     )
 
-    display_columns = ["시장", "종목코드", "종목명", "야후심볼", "ETF", "섹터"]
+    display_columns = [*STOCK_LIST_GRID_COLUMNS, "야후심볼"]
     display_df = display_df[display_columns].reset_index(drop=True)
+    column_config = stock_list_column_config()
 
     _prepare_auto_select_row(display_df)
 
@@ -555,14 +602,17 @@ def render_stock_list_grid() -> None:
         f"검색 결과 {len(display_df):,}개{sector_caption} · "
     )
 
+    grid_height = 35 * STOCK_LIST_VISIBLE_ROWS + 38
     if display_df.empty:
         _clear_stock_list_selection()
         st.info("검색 조건에 맞는 종목이 없습니다.")
         st.dataframe(
-            display_df,
+            display_df[STOCK_LIST_GRID_COLUMNS],
             use_container_width=True,
             hide_index=True,
-            height=35 * STOCK_LIST_VISIBLE_ROWS + 38,
+            height=grid_height,
+            column_config=column_config,
+            column_order=STOCK_LIST_GRID_COLUMNS,
         )
         return
 
@@ -570,10 +620,13 @@ def render_stock_list_grid() -> None:
         display_df,
         use_container_width=True,
         hide_index=True,
-        height=35 * STOCK_LIST_VISIBLE_ROWS + 38,
+        height=grid_height,
         on_select="rerun",
         selection_mode="single-row",
         key="stock_list_selection",
+        column_config=column_config,
+        column_order=STOCK_LIST_GRID_COLUMNS,
+        row_height=35,
     )
     apply_stock_list_selection(display_df, selection)
 

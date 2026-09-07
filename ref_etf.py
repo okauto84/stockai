@@ -17,8 +17,8 @@ ETF_DATA_DIR = ROOT_DIR / "data" / "etf"
 MAX_GRID_ROWS = 12
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
-# 차트 HTML 캐시 무효화용 (legend 제거 등 UI 변경 시 증가)
-CHART_CACHE_VERSION = 6
+# 차트 HTML 캐시 무효화용 (legend 제거·구성종목 툴팁 등 UI 변경 시 증가)
+CHART_CACHE_VERSION = 7
 
 
 def sector_to_filename(sector: str) -> str:
@@ -43,12 +43,37 @@ def sector_json_path(sector: str) -> Path:
 
 
 @st.cache_data
-def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict[str, str]]]]:
+def load_etf_elements_by_symbol() -> dict[str, list[str]]:
+    """야후심볼 → ETF 구성종목명 목록"""
+    with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
+        payload = json.load(file)
+
+    elements_map: dict[str, list[str]] = {}
+    for items in payload.get("markets", {}).values():
+        for item in items:
+            if item.get("ETF") != "Y":
+                continue
+            symbol = str(item.get("yahoosymbol", "")).strip()
+            if not symbol:
+                continue
+            raw = item.get("elements")
+            if isinstance(raw, list):
+                elements_map[symbol] = [
+                    str(name).strip() for name in raw if str(name).strip()
+                ]
+            else:
+                elements_map[symbol] = []
+    return elements_map
+
+
+@st.cache_data
+def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict]]]:
     """kospilist.json에서 ETF 섹터 집계 및 섹터별 종목(이름·심볼) 목록 로드"""
     with KOSPI_LIST_FILE.open(encoding="utf-8") as file:
         payload = json.load(file)
 
-    sector_etfs: dict[str, list[dict[str, str]]] = {}
+    elements_map = load_etf_elements_by_symbol()
+    sector_etfs: dict[str, list[dict]] = {}
     seen: dict[str, set[str]] = {}
     for items in payload.get("markets", {}).values():
         for item in items:
@@ -69,6 +94,7 @@ def load_etf_sector_data() -> tuple[pd.DataFrame, dict[str, list[dict[str, str]]
                     "name": name,
                     "yahoosymbol": symbol,
                     "code": code,
+                    "elements": elements_map.get(symbol, []),
                 }
             )
 
@@ -136,8 +162,16 @@ def _etf_color_map(names: list[str]) -> dict[str, str]:
     }
 
 
+def _format_elements_tooltip(elements) -> str:
+    """구성종목 리스트 → 툴팁 문자열"""
+    if not isinstance(elements, list):
+        return ""
+    names = [str(name).strip() for name in elements if str(name).strip()]
+    return ", ".join(names)
+
+
 def _stock_chip(
-    etf: dict[str, str],
+    etf: dict,
     sector: str,
     *,
     color: str | None = None,
@@ -159,7 +193,11 @@ def _stock_chip(
     symbol_q = html.escape(symbol, quote=True)
     sector_q = html.escape(sector, quote=True)
     keyword_q = html.escape(keyword, quote=True)
-    title_q = html.escape(f"{symbol} 분석 보기", quote=True)
+    elements_tip = _format_elements_tooltip(etf.get("elements"))
+    title_q = html.escape(
+        elements_tip or f"{symbol} 분석 보기",
+        quote=True,
+    )
     swatch = ""
     if color:
         swatch = (
@@ -174,7 +212,7 @@ def _stock_chip(
 
 
 def _name_chips_html(
-    etfs: list[dict[str, str]],
+    etfs: list[dict],
     sector: str,
     *,
     color_map: dict[str, str] | None = None,
@@ -202,16 +240,24 @@ def _sector_toggle_cell_html(sector: str, expand_id: str) -> str:
     )
 
 
-def _chips_from_payload(payload: dict, sector: str) -> list[dict[str, str]]:
+def _chips_from_payload(payload: dict, sector: str) -> list[dict]:
     """섹터 JSON payload에서 칩용 ETF 목록 생성"""
-    chips: list[dict[str, str]] = []
+    elements_map = load_etf_elements_by_symbol()
+    chips: list[dict] = []
     for item in payload.get("items", []):
         name = str(item.get("name", "")).strip()
         symbol = str(item.get("yahoosymbol", "")).strip()
         code = str(item.get("code", "")).strip()
         if not name or not symbol:
             continue
-        chips.append({"name": name, "yahoosymbol": symbol, "code": code})
+        chips.append(
+            {
+                "name": name,
+                "yahoosymbol": symbol,
+                "code": code,
+                "elements": elements_map.get(symbol, []),
+            }
+        )
     chips.sort(key=lambda row: row["name"])
     return chips
 
@@ -423,7 +469,7 @@ def _sector_expand_content(sector: str) -> tuple[str, str]:
 def _sector_expand_row_html(
     sector: str,
     expand_id: str,
-    sector_etfs: dict[str, list[dict[str, str]]],
+    sector_etfs: dict[str, list[dict]],
 ) -> str:
     """섹터 클릭 시 한 줄(row)에 ETF 목록 + 정규화 차트를 표시"""
     if not sector:
@@ -458,7 +504,7 @@ def _sector_expand_row_html(
 
 def build_sector_grid_html(
     grid_rows: list[dict],
-    sector_etfs: dict[str, list[dict[str, str]]],
+    sector_etfs: dict[str, list[dict]],
 ) -> str:
     """HTML 섹터 그리드 (섹터 클릭 시 종목 목록·차트를 같은 펼침 행에 표시)"""
     body_rows: list[str] = []
