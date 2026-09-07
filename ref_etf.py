@@ -19,6 +19,7 @@ CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거·구성종목 툴팁 등 UI 변경 시 증가)
 CHART_CACHE_VERSION = 8
+EXCLUDED_MA20_SECTORS = {"", "기타"}
 
 
 def sector_to_filename(sector: str) -> str:
@@ -314,6 +315,167 @@ def _chips_from_payload(payload: dict, sector: str) -> list[dict]:
     return chips
 
 
+def latest_grid_row(item: dict) -> dict | None:
+    """ETF item grid의 최신(마지막) 행"""
+    grid = item.get("grid") or []
+    if not grid:
+        return None
+    return grid[-1] if isinstance(grid[-1], dict) else None
+
+
+def is_close_ge_ma20(item: dict) -> bool:
+    """최신 종가 >= MA20 여부"""
+    row = latest_grid_row(item)
+    if not row:
+        return False
+    try:
+        close = float(row.get("종가"))
+        ma20 = float(row.get("MA20"))
+    except (TypeError, ValueError):
+        return False
+    return close >= ma20
+
+
+def filter_payload_close_ge_ma20(payload: dict) -> dict:
+    """종가 >= MA20 인 ETF만 남긴 payload 복사본"""
+    items = [
+        item
+        for item in (payload.get("items") or [])
+        if isinstance(item, dict) and is_close_ge_ma20(item)
+    ]
+    filtered = dict(payload)
+    filtered["items"] = items
+    counts = dict(payload.get("counts") or {})
+    counts["success"] = len(items)
+    counts["filtered_close_ge_ma20"] = len(items)
+    filtered["counts"] = counts
+    return filtered
+
+
+def _etf_json_cache_key() -> str:
+    """data/etf·kospilist 변경 감지용 캐시 키"""
+    parts: list[str] = []
+    if ETF_DATA_DIR.exists():
+        for path in sorted(ETF_DATA_DIR.glob("*.json")):
+            parts.append(f"{path.name}:{path.stat().st_mtime}")
+    if KOSPI_LIST_FILE.exists():
+        parts.append(f"kospilist:{KOSPI_LIST_FILE.stat().st_mtime}")
+    parts.append(f"ver:{CHART_CACHE_VERSION}")
+    return "|".join(parts)
+
+
+@st.cache_data(show_spinner=False)
+def collect_close_ge_ma20_by_sector(
+    cache_key: str,
+) -> tuple[pd.DataFrame, dict[str, list[dict]]]:
+    """기타 제외 · 종가>=MA20 ETF를 섹터별로 수집"""
+    del cache_key
+    elements_map = get_etf_elements_map()
+    sector_etfs: dict[str, list[dict]] = {}
+
+    if not ETF_DATA_DIR.exists():
+        return pd.DataFrame(columns=["섹터", "수"]), sector_etfs
+
+    for path in sorted(ETF_DATA_DIR.glob("*.json")):
+        try:
+            payload = load_payload_from_path(path)
+        except Exception:
+            continue
+        sector = str(payload.get("sector") or path.stem).strip()
+        if sector in EXCLUDED_MA20_SECTORS:
+            continue
+
+        matched: list[dict] = []
+        for item in payload.get("items") or []:
+            if not isinstance(item, dict) or not is_close_ge_ma20(item):
+                continue
+            name = str(item.get("name", "")).strip()
+            symbol = str(item.get("yahoosymbol", "")).strip()
+            code = str(item.get("code", "")).strip()
+            if not name or not symbol:
+                continue
+            matched.append(
+                {
+                    "name": name,
+                    "yahoosymbol": symbol,
+                    "code": code,
+                    "elements": lookup_etf_elements(
+                        elements_map, symbol=symbol, code=code
+                    ),
+                }
+            )
+        if not matched:
+            continue
+        matched.sort(key=lambda row: row["name"])
+        sector_etfs[sector] = matched
+
+    count_rows = [
+        {"섹터": sector, "수": len(etfs)}
+        for sector, etfs in sorted(
+            sector_etfs.items(),
+            key=lambda item: (-len(item[1]), item[0]),
+        )
+    ]
+    return pd.DataFrame(count_rows), sector_etfs
+
+
+def _ma20_expand_content(sector: str, etfs: list[dict]) -> tuple[str, str]:
+    """종가>=MA20 펼침용 칩·차트 HTML"""
+    if not etfs:
+        return (
+            '<span class="empty-msg">조건에 맞는 ETF가 없습니다.</span>',
+            '<p class="chart-empty">표시할 차트가 없습니다.</p>',
+        )
+
+    color_map = _etf_color_map([item["name"] for item in etfs])
+    chips = _name_chips_html(etfs, sector, color_map=color_map)
+
+    path = sector_json_path(sector)
+    if not path.exists():
+        return chips, (
+            f'<div class="etf-chart-wrap">'
+            f'<p class="chart-empty">섹터 JSON 없음: '
+            f"{html.escape(path.name)}</p></div>"
+        )
+
+    try:
+        payload = filter_payload_close_ge_ma20(load_sector_payload(sector))
+        chart = normalized_close_chart_svg(payload, color_map=color_map)
+    except Exception as exc:
+        chart = (
+            f'<div class="etf-chart-wrap">'
+            f'<p class="chart-empty">차트 생성 실패: '
+            f"{html.escape(str(exc))}</p></div>"
+        )
+    return chips, chart
+
+
+def _ma20_expand_row_html(
+    sector: str,
+    expand_id: str,
+    sector_etfs: dict[str, list[dict]],
+) -> str:
+    """종가>=MA20 섹터 펼침 행"""
+    if not sector:
+        return ""
+    etfs = sector_etfs.get(sector, [])
+    chips_html, chart_html = _ma20_expand_content(sector, etfs)
+    return (
+        f'<tr id="{html.escape(expand_id, quote=True)}" '
+        f'class="etf-expand-row">'
+        f'<td colspan="4" class="expand-cell">'
+        f'<div class="detail-wrap">'
+        f'<div class="detail-title">'
+        f"{html.escape(sector)} · 종가 ≥ MA20 · 클릭 시 개별 분석"
+        f"</div>"
+        f'<div class="chip-row">{chips_html}</div>'
+        f"{chart_html}"
+        f"</div>"
+        f"</td>"
+        f"</tr>"
+    )
+
+
 def build_normalized_close_chart_df(
     payload: dict,
     *,
@@ -565,6 +727,9 @@ def _sector_expand_row_html(
 def build_sector_grid_html(
     grid_rows: list[dict],
     sector_etfs: dict[str, list[dict]],
+    *,
+    id_prefix: str = "etf-exp",
+    expand_row_html=_sector_expand_row_html,
 ) -> str:
     """HTML 섹터 그리드 (섹터 클릭 시 종목 목록·차트를 같은 펼침 행에 표시)"""
     body_rows: list[str] = []
@@ -573,8 +738,8 @@ def build_sector_grid_html(
         left_count = row["left_count"]
         right_sector = row["right_sector"]
         right_count = row["right_count"]
-        left_expand_id = f"etf-exp-{row_idx}-L"
-        right_expand_id = f"etf-exp-{row_idx}-R"
+        left_expand_id = f"{id_prefix}-{row_idx}-L"
+        right_expand_id = f"{id_prefix}-{row_idx}-R"
 
         left_count_cell = (
             f'<td class="count">{left_count}</td>'
@@ -596,10 +761,10 @@ def build_sector_grid_html(
             "</tr>"
         )
         body_rows.append(
-            _sector_expand_row_html(left_sector, left_expand_id, sector_etfs)
+            expand_row_html(left_sector, left_expand_id, sector_etfs)
         )
         body_rows.append(
-            _sector_expand_row_html(right_sector, right_expand_id, sector_etfs)
+            expand_row_html(right_sector, right_expand_id, sector_etfs)
         )
 
     return f"""
@@ -1058,6 +1223,40 @@ def render_sector_count_grid() -> None:
     render_sector_grid_component(grid_html, pair_rows=len(grid_rows))
 
 
+def render_close_ge_ma20_grid() -> None:
+    """기타 제외 · 종가 ≥ MA20 ETF 섹터별 그리드"""
+    if not ETF_DATA_DIR.exists():
+        st.warning(f"ETF 데이터 폴더를 찾을 수 없습니다: {ETF_DATA_DIR}")
+        return
+
+    try:
+        sector_df, sector_etfs = collect_close_ge_ma20_by_sector(_etf_json_cache_key())
+    except Exception as exc:
+        st.error(f"종가≥MA20 집계 중 오류: {exc}")
+        return
+
+    st.markdown("#### 종가 ≥ MA20 ETF")
+    if sector_df.empty:
+        st.info("기타를 제외한 섹터에서 종가 ≥ MA20 인 ETF가 없습니다.")
+        return
+
+    grid_rows = build_sector_grid_rows(sector_df, MAX_GRID_ROWS)
+    total_etf = int(sector_df["수"].sum())
+    st.caption(
+        f"기타 제외 · 최신 종가 ≥ MA20 · 섹터 {len(sector_df):,}개 · "
+        f"ETF {total_etf:,}개 · 그리드 {len(grid_rows)}행"
+    )
+    with st.spinner("종가≥MA20 차트 준비 중..."):
+        grid_html = build_sector_grid_html(
+            grid_rows,
+            sector_etfs,
+            id_prefix="etf-ma20-exp",
+            expand_row_html=_ma20_expand_row_html,
+        )
+    render_sector_grid_component(grid_html, pair_rows=len(grid_rows))
+
+
 def render_page() -> None:
     """ETF 추세확인 Streamlit 페이지"""
     render_sector_count_grid()
+    render_close_ge_ma20_grid()
