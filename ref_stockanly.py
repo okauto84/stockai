@@ -348,11 +348,21 @@ def apply_stock_list_selection(
     stock_df: pd.DataFrame, selection_state
 ) -> None:
     """종목 목록 그리드 선택값을 종목 코드 입력란에 반영"""
-    if not selection_state or not selection_state.selection.rows:
+    if stock_df.empty or not selection_state or not selection_state.selection.rows:
         return
 
-    selected_row = stock_df.iloc[selection_state.selection.rows[0]]
+    row_idx = selection_state.selection.rows[0]
+    if row_idx < 0 or row_idx >= len(stock_df):
+        return
+
+    selected_row = stock_df.iloc[row_idx]
     st.session_state["symbol"] = str(selected_row["야후심볼"]).strip().upper()
+
+
+def _clear_stock_list_selection() -> None:
+    """종목 목록 그리드 선택 상태 초기화"""
+    if "stock_list_selection" in st.session_state:
+        del st.session_state["stock_list_selection"]
 
 
 def _prepare_auto_select_row(display_df: pd.DataFrame) -> None:
@@ -363,6 +373,10 @@ def _prepare_auto_select_row(display_df: pd.DataFrame) -> None:
 
     pending = str(pending).strip().upper()
     st.session_state["symbol"] = pending
+
+    if display_df.empty:
+        _clear_stock_list_selection()
+        return
 
     match_positions = [
         idx
@@ -518,6 +532,7 @@ def render_stock_list_grid() -> None:
         st.session_state["stock_list_market_applied"] = market_filter
         st.session_state["stock_list_sector_applied"] = sector_filter
         st.session_state["stock_list_keyword_applied"] = keyword.strip()
+        _clear_stock_list_selection()
 
     display_df = filter_stock_list(
         stock_df,
@@ -539,6 +554,18 @@ def render_stock_list_grid() -> None:
         f"코스피·코스닥 상장 종목 {len(stock_df):,}개 · "
         f"검색 결과 {len(display_df):,}개{sector_caption} · "
     )
+
+    if display_df.empty:
+        _clear_stock_list_selection()
+        st.info("검색 조건에 맞는 종목이 없습니다.")
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            height=35 * STOCK_LIST_VISIBLE_ROWS + 38,
+        )
+        return
+
     selection = st.dataframe(
         display_df,
         use_container_width=True,

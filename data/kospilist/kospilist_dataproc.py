@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,11 +18,16 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 DATA_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = DATA_DIR / "kospilist.json"
 NAVER_ETF_API = "https://finance.naver.com/api/sise/etfItemList.nhn"
+NAVER_ETF_CONSTITUENT_API = (
+    "https://m.stock.naver.com/front-api/stock/domestic/etf/constituent/list"
+)
 
 YAHOO_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 }
 SSL_VERIFY = False
+ETF_ELEMENTS_SLEEP_SECONDS = 0.05
+ETF_ELEMENTS_WORKERS = 8
 
 MARKET_SUFFIX = {
     "KOSPI": ".KS",
@@ -89,6 +96,70 @@ def fetch_etf_listing(etf_codes: set[str]) -> pd.DataFrame:
         )
 
     return pd.DataFrame(records).drop_duplicates(subset=["Code"]).reset_index(drop=True)
+
+
+def fetch_etf_elements(code: str) -> list[str]:
+    """Naver Finance ETF 구성종목(이름) 전체 조회"""
+    elements: list[str] = []
+    cursor: str | None = None
+
+    while True:
+        params: dict[str, str] = {"code": normalize_code(code)}
+        if cursor:
+            params["cursor"] = cursor
+
+        response = requests.get(
+            NAVER_ETF_CONSTITUENT_API,
+            headers=YAHOO_HEADERS,
+            params=params,
+            verify=SSL_VERIFY,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("isSuccess"):
+            break
+
+        result = payload.get("result") or {}
+        for item in result.get("result") or []:
+            name = str(item.get("itemName") or "").strip()
+            if name:
+                elements.append(name)
+
+        if not result.get("hasNext"):
+            break
+        cursor = result.get("nextCursor")
+        if not cursor:
+            break
+        time.sleep(ETF_ELEMENTS_SLEEP_SECONDS)
+
+    return elements
+
+
+def fetch_etf_elements_map(etf_codes: set[str]) -> dict[str, list[str]]:
+    """ETF 코드별 구성종목 맵 조회"""
+    codes = sorted(etf_codes)
+    total = len(codes)
+    elements_map: dict[str, list[str]] = {}
+    done = 0
+
+    def _fetch_one(code: str) -> tuple[str, list[str]]:
+        try:
+            return code, fetch_etf_elements(code)
+        except Exception as exc:
+            print(f"  [경고] {code} 구성종목 조회 실패: {exc}", flush=True)
+            return code, []
+
+    with ThreadPoolExecutor(max_workers=ETF_ELEMENTS_WORKERS) as executor:
+        futures = [executor.submit(_fetch_one, code) for code in codes]
+        for future in as_completed(futures):
+            code, elements = future.result()
+            elements_map[code] = elements
+            done += 1
+            if done == 1 or done % 50 == 0 or done == total:
+                print(f"  구성종목 수집 진행: {done}/{total}", flush=True)
+
+    return elements_map
 
 
 def fetch_krx_listing(etf_codes: set[str]) -> pd.DataFrame:
@@ -406,8 +477,13 @@ def get_accurate_sector(code: str, name: str) -> str:
     return sector
 
 
-def build_market_records(df: pd.DataFrame, market: str) -> list[dict]:
+def build_market_records(
+    df: pd.DataFrame,
+    market: str,
+    elements_map: dict[str, list[str]] | None = None,
+) -> list[dict]:
     """시장별 종목 레코드 생성"""
+    elements_map = elements_map or {}
     market_df = df[df["Market"] == market]
     records = []
     for _, row in market_df.iterrows():
@@ -421,23 +497,28 @@ def build_market_records(df: pd.DataFrame, market: str) -> list[dict]:
                 "sector": (
                     get_accurate_sector(row["Code"], row["Name"]) if is_etf else ""
                 ),
+                "elements": elements_map.get(row["Code"], []) if is_etf else "",
             }
         )
     return records
 
 
-def build_stock_list_payload(df: pd.DataFrame) -> dict:
+def build_stock_list_payload(
+    df: pd.DataFrame,
+    elements_map: dict[str, list[str]] | None = None,
+) -> dict:
     """JSON 저장용 전체 페이로드 생성"""
     etf_count = int((df["ETF"] == "Y").sum())
     return {
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": (
             "FinanceDataReader(KRX) + Naver Finance ETF list + "
+            "Naver Finance ETF constituent list + "
             "Yahoo Finance symbol mapping"
         ),
         "markets": {
-            "KOSPI": build_market_records(df, "KOSPI"),
-            "KOSDAQ": build_market_records(df, "KOSDAQ"),
+            "KOSPI": build_market_records(df, "KOSPI", elements_map),
+            "KOSDAQ": build_market_records(df, "KOSDAQ", elements_map),
         },
         "counts": {
             "KOSPI": int((df["Market"] == "KOSPI").sum()),
@@ -454,7 +535,12 @@ def save_stock_list(output_file: Path = OUTPUT_FILE) -> dict:
     krx_listing = fetch_krx_listing(etf_codes)
     etf_listing = fetch_etf_listing(etf_codes)
     listing = merge_with_etf_listing(krx_listing, etf_listing)
-    payload = build_stock_list_payload(listing)
+
+    print(f"ETF 구성종목 수집 시작 ({(listing['ETF'] == 'Y').sum()}개)", flush=True)
+    elements_map = fetch_etf_elements_map(
+        set(listing.loc[listing["ETF"] == "Y", "Code"])
+    )
+    payload = build_stock_list_payload(listing, elements_map)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open("w", encoding="utf-8") as file:
@@ -469,7 +555,8 @@ def main() -> None:
         f"저장 완료: {OUTPUT_FILE} "
         f"(KOSPI {payload['counts']['KOSPI']}개, "
         f"KOSDAQ {payload['counts']['KOSDAQ']}개, "
-        f"ETF {payload['counts']['ETF']}개)"
+        f"ETF {payload['counts']['ETF']}개)",
+        flush=True,
     )
 
 
