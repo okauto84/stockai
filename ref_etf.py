@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
+from urllib.parse import urlencode
 
 import pandas as pd
 import streamlit as st
@@ -17,7 +18,7 @@ MAX_GRID_ROWS = 12
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거 등 UI 변경 시 증가)
-CHART_CACHE_VERSION = 5
+CHART_CACHE_VERSION = 6
 
 
 def sector_to_filename(sector: str) -> str:
@@ -141,21 +142,34 @@ def _stock_chip(
     *,
     color: str | None = None,
 ) -> str:
-    """개별 종목 분석 탭 이동용 칩(텍스트) HTML"""
+    """개별 종목 분석 탭 이동용 칩(<a target=_top>) HTML"""
     name = html.escape(etf["name"])
-    symbol_q = html.escape(str(etf["yahoosymbol"]).strip(), quote=True)
+    symbol = str(etf["yahoosymbol"]).strip()
+    keyword = str(etf.get("code") or etf["name"]).strip()
+    # iframe 상대경로(?...)가 아닌 앱 루트(/?)로 이동해야 탭 전환이 됨
+    href = "/?" + urlencode(
+        {
+            "goto": "stock",
+            "symbol": symbol,
+            "sector": sector,
+            "keyword": keyword,
+        }
+    )
+    href_q = html.escape(href, quote=True)
+    symbol_q = html.escape(symbol, quote=True)
     sector_q = html.escape(sector, quote=True)
-    keyword_q = html.escape(str(etf.get("code") or etf["name"]).strip(), quote=True)
-    title_q = html.escape(f"{etf['yahoosymbol']} 분석 보기", quote=True)
+    keyword_q = html.escape(keyword, quote=True)
+    title_q = html.escape(f"{symbol} 분석 보기", quote=True)
     swatch = ""
     if color:
         swatch = (
             f'<i class="chip-swatch" style="background:{html.escape(color, quote=True)}"></i>'
         )
     return (
-        f'<span class="name-chip" data-symbol="{symbol_q}" '
-        f'data-sector="{sector_q}" data-keyword="{keyword_q}" '
-        f'title="{title_q}">{swatch}{name}</span>'
+        f'<a class="name-chip" href="{href_q}" target="_top" rel="noopener" '
+        f'data-symbol="{symbol_q}" data-sector="{sector_q}" '
+        f'data-keyword="{keyword_q}" title="{title_q}">'
+        f"{swatch}{name}</a>"
     )
 
 
@@ -566,7 +580,8 @@ def build_sector_grid_html(
     gap: 8px;
     align-items: center;
   }}
-  span.name-chip {{
+  span.name-chip,
+  a.name-chip {{
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -575,13 +590,15 @@ def build_sector_grid_html(
     border-radius: 6px;
     background: #fff;
     color: #0f172a !important;
+    text-decoration: none !important;
     white-space: nowrap;
     line-height: 1.3;
     font-size: 10px;
     cursor: pointer;
     user-select: none;
   }}
-  span.name-chip .chip-swatch {{
+  span.name-chip .chip-swatch,
+  a.name-chip .chip-swatch {{
     display: inline-block;
     width: 8px;
     height: 8px;
@@ -589,7 +606,8 @@ def build_sector_grid_html(
     flex: 0 0 auto;
     pointer-events: none;
   }}
-  span.name-chip:hover {{
+  span.name-chip:hover,
+  a.name-chip:hover {{
     background: #dbeafe;
     border-color: #93c5fd;
   }}
@@ -672,7 +690,6 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
         <script>
         (function () {{
           const doc = document;
-          const navWin = window.top || window.parent || window;
 
           function closeOthers(exceptId) {{
             doc.querySelectorAll('tr.etf-expand-row.is-open').forEach(function (row) {{
@@ -698,34 +715,112 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
             }}
           }}
 
-          function goChip(el) {{
-            const symbol = (el.getAttribute('data-symbol') || '').trim();
-            if (!symbol) return;
-            const sector = el.getAttribute('data-sector') || '';
-            const keyword = el.getAttribute('data-keyword') || '';
+          // Streamlit st.components.html iframe sandbox에는
+          // allow-top-navigation 이 없어 location / <a target=_top> 이 차단됨.
+          // allow-same-origin 으로 부모 document에 스크립트를 심어 우회.
+          function buildGotoHref(symbol, sector, keyword) {{
+            let url;
             try {{
-              const url = new URL(navWin.location.href);
-              url.search = '';
-              url.searchParams.set('goto', 'stock');
-              url.searchParams.set('symbol', symbol);
-              if (sector) url.searchParams.set('sector', sector);
-              if (keyword) url.searchParams.set('keyword', keyword);
-              navWin.location.assign(url.toString());
+              url = new URL((window.parent && window.parent.location.href) || window.location.href);
+            }} catch (err) {{
+              url = new URL(window.location.origin + '/');
+            }}
+            url.search = '';
+            url.hash = '';
+            url.searchParams.set('goto', 'stock');
+            url.searchParams.set('symbol', symbol);
+            if (sector) url.searchParams.set('sector', sector);
+            if (keyword) url.searchParams.set('keyword', keyword);
+            return url.toString();
+          }}
+
+          function installParentNav(win) {{
+            if (!win || win === window) return;
+            try {{
+              const pdoc = win.document;
+              if (!pdoc || pdoc.documentElement.getAttribute('data-stockai-nav') === '1') return;
+              pdoc.documentElement.setAttribute('data-stockai-nav', '1');
+              const s = pdoc.createElement('script');
+              s.textContent = [
+                'window.addEventListener("message", function (ev) {{',
+                '  var d = ev.data || {{}};',
+                '  if (d.type !== "stockai-goto-stock" || !d.symbol) return;',
+                '  try {{',
+                '    var url = new URL(window.location.href);',
+                '    url.search = "";',
+                '    url.hash = "";',
+                '    url.searchParams.set("goto", "stock");',
+                '    url.searchParams.set("symbol", d.symbol);',
+                '    if (d.sector) url.searchParams.set("sector", d.sector);',
+                '    if (d.keyword) url.searchParams.set("keyword", d.keyword);',
+                '    window.location.assign(url.toString());',
+                '  }} catch (e) {{}}',
+                '}});'
+              ].join('\\n');
+              (pdoc.head || pdoc.documentElement).appendChild(s);
             }} catch (err) {{}}
           }}
+
+          function goChip(el) {{
+            const symbol = (el.getAttribute('data-symbol') || '').trim();
+            if (!symbol) return false;
+            const sector = el.getAttribute('data-sector') || '';
+            const keyword = el.getAttribute('data-keyword') || '';
+            const href = buildGotoHref(symbol, sector, keyword);
+            const msg = {{
+              type: 'stockai-goto-stock',
+              symbol: symbol,
+              sector: sector,
+              keyword: keyword
+            }};
+
+            // 1) 부모(비sandbox) 스크립트가 location 변경
+            try {{ window.parent.postMessage(msg, '*'); }} catch (err) {{}}
+            try {{
+              if (window.top && window.top !== window.parent) {{
+                window.top.postMessage(msg, '*');
+              }}
+            }} catch (err) {{}}
+
+            // 2) 부모 document의 <a> 클릭 (실패해도 throw 안 할 수 있음 → 계속 시도)
+            try {{
+              const pdoc = window.parent.document;
+              const a = pdoc.createElement('a');
+              a.href = href;
+              a.style.display = 'none';
+              pdoc.body.appendChild(a);
+              a.click();
+              a.remove();
+            }} catch (err) {{}}
+
+            // 3) allow-popups: window.open(..., '_top')
+            try {{ window.open(href, '_top'); }} catch (err) {{}}
+
+            // 4) 부모 location 직접 시도
+            try {{
+              if (window.parent && window.parent !== window) {{
+                window.parent.location.href = href;
+              }}
+            }} catch (err) {{}}
+
+            return true;
+          }}
+
+          installParentNav(window.parent);
+          try {{ installParentNav(window.top); }} catch (err) {{}}
 
           doc.addEventListener('click', function (e) {{
             const t = e.target;
             const el = t && t.nodeType === 3 ? t.parentElement : t;
             if (!el || !el.closest) return;
-            const sector = el.closest('.sector-toggle[data-expand]');
-            if (sector) {{
+            const sectorEl = el.closest('.sector-toggle[data-expand]');
+            if (sectorEl) {{
               e.preventDefault();
               e.stopPropagation();
-              toggleSector(sector);
+              toggleSector(sectorEl);
               return;
             }}
-            const chip = el.closest('.name-chip[data-symbol]');
+            const chip = el.closest('a.name-chip[data-symbol], .name-chip[data-symbol]');
             if (chip) {{
               e.preventDefault();
               e.stopPropagation();

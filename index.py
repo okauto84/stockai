@@ -1,9 +1,51 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
 PAGE_DATA_UPDATE = "Data update"
 PAGE_ETF = "ETF 추세확인"
 PAGE_STOCK = "개별 종목 분석"
 PAGE_OPTIONS = [PAGE_DATA_UPDATE, PAGE_ETF, PAGE_STOCK]
+
+
+def inject_nav_bridge() -> None:
+    """components.html sandbox(top-nav 차단)용: 부모 document에 네비 스크립트 주입"""
+    components.html(
+        """
+        <script>
+        (function () {
+          function install(win) {
+            if (!win || win === window) return;
+            try {
+              var pdoc = win.document;
+              if (!pdoc || pdoc.documentElement.getAttribute('data-stockai-nav') === '1') return;
+              pdoc.documentElement.setAttribute('data-stockai-nav', '1');
+              var s = pdoc.createElement('script');
+              s.textContent = [
+                'window.addEventListener("message", function (ev) {',
+                '  var d = ev.data || {};',
+                '  if (d.type !== "stockai-goto-stock" || !d.symbol) return;',
+                '  try {',
+                '    var url = new URL(window.location.href);',
+                '    url.search = "";',
+                '    url.hash = "";',
+                '    url.searchParams.set("goto", "stock");',
+                '    url.searchParams.set("symbol", d.symbol);',
+                '    if (d.sector) url.searchParams.set("sector", d.sector);',
+                '    if (d.keyword) url.searchParams.set("keyword", d.keyword);',
+                '    window.location.assign(url.toString());',
+                '  } catch (e) {}',
+                '});'
+              ].join('\\n');
+              (pdoc.head || pdoc.documentElement).appendChild(s);
+            } catch (e) {}
+          }
+          install(window.parent);
+          try { install(window.top); } catch (e) {}
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def inject_styles() -> None:
@@ -186,6 +228,7 @@ def main() -> None:
     clear_caches_and_reload_stock_list()
     apply_query_navigation()
     inject_styles()
+    inject_nav_bridge()
 
     if "symbol" not in st.session_state:
         st.session_state["symbol"] = ""
