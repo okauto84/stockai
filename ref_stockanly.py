@@ -96,6 +96,38 @@ def chart_x_ordinal_encoding(show_labels: bool = True, *, padding_outer: float =
     )
 
 
+def right_axis_spacer(
+    df: pd.DataFrame,
+    x_enc: alt.X,
+    y_field: str,
+    y_values: pd.Series,
+    *,
+    min_extent: float = 50,
+) -> alt.Chart:
+    """이중축 차트와 플롯 폭을 맞추기 위한 우측 축 여백"""
+    return (
+        alt.Chart(df)
+        .mark_point(opacity=0, size=0)
+        .encode(
+            x=x_enc,
+            y=alt.Y(
+                f"{y_field}:Q",
+                title="RS지수",
+                scale=alt.Scale(domain=y_domain(y_values), nice=False),
+                axis=alt.Axis(
+                    orient="right",
+                    format=",.0f",
+                    labelOpacity=0,
+                    tickOpacity=0,
+                    domainOpacity=0,
+                    titleOpacity=0,
+                    minExtent=min_extent,
+                ),
+            ),
+        )
+    )
+
+
 def add_date_label(df: pd.DataFrame) -> pd.DataFrame:
     """차트용 날짜 라벨(%m.%d) 추가"""
     labeled = df.copy()
@@ -618,11 +650,14 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
             ],
         )
     )
-    price_chart = alt.layer(price_line, price_hover).properties(
-        height=CLOSE_PANEL_HEIGHT
+    price_spacer = right_axis_spacer(price_points, x_hidden, "종가", labeled_df["종가"])
+    price_chart = (
+        alt.layer(alt.layer(price_line, price_hover), price_spacer)
+        .resolve_scale(y="independent")
+        .properties(height=CLOSE_PANEL_HEIGHT)
     )
 
-    volume_chart = (
+    volume_bars = (
         alt.Chart(volume_df)
         .mark_bar()
         .encode(
@@ -635,6 +670,13 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
                 alt.Tooltip("증감:N", title="전일대비"),
             ],
         )
+    )
+    volume_spacer = right_axis_spacer(
+        volume_df, x_visible, "거래량", volume_df["거래량"]
+    )
+    volume_chart = (
+        alt.layer(volume_bars, volume_spacer)
+        .resolve_scale(y="independent")
         .properties(height=VOLUME_PANEL_HEIGHT)
     )
 
