@@ -17,7 +17,7 @@ MAX_GRID_ROWS = 12
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거 등 UI 변경 시 증가)
-CHART_CACHE_VERSION = 4
+CHART_CACHE_VERSION = 5
 
 
 def sector_to_filename(sector: str) -> str:
@@ -141,27 +141,21 @@ def _stock_chip(
     *,
     color: str | None = None,
 ) -> str:
-    """개별 종목 분석 탭 이동용 칩 버튼 HTML 생성"""
+    """개별 종목 분석 탭 이동용 칩(텍스트) HTML"""
     name = html.escape(etf["name"])
-    symbol = str(etf["yahoosymbol"]).strip()
-    keyword = str(etf.get("code") or etf["name"]).strip()
-    # iframe 안에서는 상대 ?goto=... 가 컴포넌트 URL로 해석되므로
-    # data-* + JS(window.top) 네비게이션만 사용한다.
-    symbol_q = html.escape(symbol, quote=True)
+    symbol_q = html.escape(str(etf["yahoosymbol"]).strip(), quote=True)
     sector_q = html.escape(sector, quote=True)
-    keyword_q = html.escape(keyword, quote=True)
-    title_q = html.escape(f"{symbol} 분석 보기", quote=True)
+    keyword_q = html.escape(str(etf.get("code") or etf["name"]).strip(), quote=True)
+    title_q = html.escape(f"{etf['yahoosymbol']} 분석 보기", quote=True)
     swatch = ""
     if color:
         swatch = (
             f'<i class="chip-swatch" style="background:{html.escape(color, quote=True)}"></i>'
         )
     return (
-        f'<button type="button" class="name-chip" '
-        f'data-symbol="{symbol_q}" data-sector="{sector_q}" '
-        f'data-keyword="{keyword_q}" title="{title_q}" '
-        f'onclick="window.__etfGoChip && window.__etfGoChip(this)">'
-        f"{swatch}{name}</button>"
+        f'<span class="name-chip" data-symbol="{symbol_q}" '
+        f'data-sector="{sector_q}" data-keyword="{keyword_q}" '
+        f'title="{title_q}">{swatch}{name}</span>'
     )
 
 
@@ -181,21 +175,15 @@ def _name_chips_html(
 
 
 def _sector_toggle_cell_html(sector: str, expand_id: str) -> str:
-    """섹터명 클릭 토글 셀 (button + iframe 컴포넌트에서 이벤트 처리)"""
+    """섹터명 텍스트 토글 셀"""
     if not sector:
         return '<td class="sector"></td>'
 
-    expand_q = html.escape(expand_id, quote=True)
-    sector_q = html.escape(sector, quote=True)
-    label = html.escape(sector)
     return (
         f'<td class="sector">'
-        f'<button type="button" class="sector-toggle" '
-        f'data-expand="{expand_q}" data-sector="{sector_q}" '
-        f'aria-expanded="false" '
-        f'onclick="window.__etfToggleSector && window.__etfToggleSector(this)">'
-        f"{label}"
-        f"</button>"
+        f'<span class="sector-toggle" data-expand="{html.escape(expand_id, quote=True)}" '
+        f'data-sector="{html.escape(sector, quote=True)}" '
+        f'aria-expanded="false">{html.escape(sector)}</span>'
         f"</td>"
     )
 
@@ -496,37 +484,6 @@ def build_sector_grid_html(
 
     return f"""
 <style>
-  .etf-grid-toolbar {{
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 0 0 8px 0;
-  }}
-  .etf-grid-toolbar .etf-expand-all,
-  .etf-grid-toolbar .etf-collapse-all {{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #fff;
-    color: #0f172a;
-    font-size: 18px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-    user-select: none;
-    padding: 0;
-    font-family: inherit;
-  }}
-  .etf-grid-toolbar .etf-expand-all:hover,
-  .etf-grid-toolbar .etf-collapse-all:hover {{
-    background: #dbeafe;
-    border-color: #93c5fd;
-    color: #1d4ed8;
-  }}
   .etf-sector-grid-wrap {{
     width: 100%;
     overflow-x: auto;
@@ -561,40 +518,28 @@ def build_sector_grid_html(
     width: 16%;
     vertical-align: middle;
   }}
-  table.etf-sector-grid button.sector-toggle {{
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+  table.etf-sector-grid .sector-toggle {{
+    display: inline;
     margin: 0;
-    padding: 5px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #fff;
-    color: #0f172a;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
     font: inherit;
     font-weight: 600;
     cursor: pointer;
     text-align: left;
     user-select: none;
-    max-width: 100%;
-    white-space: normal;
   }}
-  table.etf-sector-grid button.sector-toggle::before {{
-    content: "▸";
+  table.etf-sector-grid .sector-toggle::before {{
+    content: "▸ ";
     color: #64748b;
-    flex: 0 0 auto;
   }}
-  table.etf-sector-grid button.sector-toggle:hover {{
-    background: #eff6ff;
-    border-color: #93c5fd;
+  table.etf-sector-grid .sector-toggle[aria-expanded="true"] {{
+    color: #2563eb;
   }}
-  table.etf-sector-grid button.sector-toggle[aria-expanded="true"] {{
-    color: #1d4ed8;
-    border-color: #93c5fd;
-    background: #dbeafe;
-  }}
-  table.etf-sector-grid button.sector-toggle[aria-expanded="true"]::before {{
-    content: "▾";
+  table.etf-sector-grid .sector-toggle[aria-expanded="true"]::before {{
+    content: "▾ ";
   }}
   table.etf-sector-grid tr.etf-expand-row {{
     display: none;
@@ -621,7 +566,7 @@ def build_sector_grid_html(
     gap: 8px;
     align-items: center;
   }}
-  button.name-chip {{
+  span.name-chip {{
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -630,15 +575,13 @@ def build_sector_grid_html(
     border-radius: 6px;
     background: #fff;
     color: #0f172a !important;
-    text-decoration: none !important;
     white-space: nowrap;
     line-height: 1.3;
     font-size: 10px;
-    font-family: inherit;
     cursor: pointer;
     user-select: none;
   }}
-  button.name-chip .chip-swatch {{
+  span.name-chip .chip-swatch {{
     display: inline-block;
     width: 8px;
     height: 8px;
@@ -646,7 +589,7 @@ def build_sector_grid_html(
     flex: 0 0 auto;
     pointer-events: none;
   }}
-  button.name-chip:hover {{
+  span.name-chip:hover {{
     background: #dbeafe;
     border-color: #93c5fd;
   }}
@@ -680,18 +623,11 @@ def build_sector_grid_html(
   .etf-hover-point {{
     cursor: crosshair;
   }}
-  /* 구버전 캐시 HTML에 legend가 남아 있어도 숨김 (종목 리스트가 legend 역할) */
   .etf-chart-legend,
   .chart-legend-item {{
     display: none !important;
   }}
 </style>
-<div class="etf-grid-toolbar">
-  <button type="button" class="etf-expand-all" title="모두 펼침"
-    onclick="window.__etfOpenAll && window.__etfOpenAll()">+</button>
-  <button type="button" class="etf-collapse-all" title="모두 접음"
-    onclick="window.__etfCloseAll && window.__etfCloseAll()">−</button>
-</div>
 <div class="etf-sector-grid-wrap">
   <table class="etf-sector-grid">
     <thead>
@@ -727,210 +663,127 @@ def load_sector_payload(sector: str) -> dict:
 
 
 def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
-    """
-    섹터 그리드 + 상호작용 스크립트를 동일 iframe에서 렌더.
-
-    Streamlit markdown은 button을 제거/차단하는 경우가 있어,
-    components.html로 렌더해야 섹터 버튼 클릭이 안정적으로 동작한다.
-    """
+    """그리드 HTML + 클릭/툴팁 스크립트를 한 iframe에서 렌더"""
     height = min(1600, max(560, 100 + max(1, pair_rows) * 52))
     components.html(
         f"""
-        <style>html, body {{ margin: 0; padding: 0; background: transparent; }}</style>
+        <style>html,body{{margin:0;padding:0;background:transparent;}}</style>
         {grid_html}
         <script>
         (function () {{
+          const doc = document;
           const navWin = window.top || window.parent || window;
 
-          function closeAllExpands(exceptId) {{
+          function closeOthers(exceptId) {{
             doc.querySelectorAll('tr.etf-expand-row.is-open').forEach(function (row) {{
               if (exceptId && row.id === exceptId) return;
               row.classList.remove('is-open');
             }});
-            doc.querySelectorAll('.sector-toggle[aria-expanded="true"]').forEach(function (btn) {{
-              if (exceptId && btn.getAttribute('data-expand') === exceptId) return;
-              btn.setAttribute('aria-expanded', 'false');
+            doc.querySelectorAll('.sector-toggle[aria-expanded="true"]').forEach(function (el) {{
+              if (exceptId && el.getAttribute('data-expand') === exceptId) return;
+              el.setAttribute('aria-expanded', 'false');
             }});
           }}
 
-          function openAllExpands() {{
-            doc.querySelectorAll('tr.etf-expand-row[id]').forEach(function (row) {{
-              row.classList.add('is-open');
-            }});
-            doc.querySelectorAll('button.sector-toggle[data-expand]').forEach(function (btn) {{
-              const expandId = btn.getAttribute('data-expand') || '';
-              if (!expandId || !doc.getElementById(expandId)) return;
-              btn.setAttribute('aria-expanded', 'true');
-            }});
-          }}
-
-          function toggleSector(btn) {{
-            if (!btn) return;
-            const expandId = btn.getAttribute('data-expand') || '';
-            const row = expandId ? doc.getElementById(expandId) : null;
+          function toggleSector(el) {{
+            const id = el.getAttribute('data-expand') || '';
+            const row = id ? doc.getElementById(id) : null;
             if (!row) return;
-            const willOpen = !row.classList.contains('is-open');
-            closeAllExpands(willOpen ? expandId : null);
-            if (willOpen) {{
-              row.classList.add('is-open');
-              btn.setAttribute('aria-expanded', 'true');
-              try {{ row.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }}); }} catch (err) {{}}
-            }} else {{
-              row.classList.remove('is-open');
-              btn.setAttribute('aria-expanded', 'false');
+            const open = !row.classList.contains('is-open');
+            closeOthers(open ? id : null);
+            row.classList.toggle('is-open', open);
+            el.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) {{
+              try {{ row.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }}); }} catch (e) {{}}
             }}
           }}
 
-          function navigateChip(chip) {{
-            if (!chip) return;
-            const symbol = (chip.getAttribute('data-symbol') || '').trim();
-            const sector = chip.getAttribute('data-sector') || '';
-            const keyword = chip.getAttribute('data-keyword') || '';
+          function goChip(el) {{
+            const symbol = (el.getAttribute('data-symbol') || '').trim();
             if (!symbol) return;
+            const sector = el.getAttribute('data-sector') || '';
+            const keyword = el.getAttribute('data-keyword') || '';
             try {{
               const url = new URL(navWin.location.href);
-              // 기존 쿼리를 비우고 네비게이션 파라미터만 설정
               url.search = '';
               url.searchParams.set('goto', 'stock');
               url.searchParams.set('symbol', symbol);
               if (sector) url.searchParams.set('sector', sector);
               if (keyword) url.searchParams.set('keyword', keyword);
               navWin.location.assign(url.toString());
-            }} catch (err) {{
-              // top 접근 실패 시 parent 경로로 재시도
-              try {{
-                const fallback = window.parent || window;
-                const url = new URL(fallback.location.href);
-                url.search = '';
-                url.searchParams.set('goto', 'stock');
-                url.searchParams.set('symbol', symbol);
-                if (sector) url.searchParams.set('sector', sector);
-                if (keyword) url.searchParams.set('keyword', keyword);
-                fallback.location.assign(url.toString());
-              }} catch (err2) {{}}
-            }}
+            }} catch (err) {{}}
           }}
-
-          window.__etfToggleSector = toggleSector;
-          window.__etfOpenAll = openAllExpands;
-          window.__etfCloseAll = function () {{ closeAllExpands(null); }};
-          window.__etfGoChip = navigateChip;
 
           doc.addEventListener('click', function (e) {{
-            const el = e.target && e.target.nodeType === 3
-              ? e.target.parentElement
-              : e.target;
+            const t = e.target;
+            const el = t && t.nodeType === 3 ? t.parentElement : t;
             if (!el || !el.closest) return;
-
-            const expandAll = el.closest('button.etf-expand-all, .etf-expand-all');
-            if (expandAll) {{
+            const sector = el.closest('.sector-toggle[data-expand]');
+            if (sector) {{
               e.preventDefault();
               e.stopPropagation();
-              openAllExpands();
+              toggleSector(sector);
               return;
             }}
-            const collapseAll = el.closest('button.etf-collapse-all, .etf-collapse-all');
-            if (collapseAll) {{
+            const chip = el.closest('.name-chip[data-symbol]');
+            if (chip) {{
               e.preventDefault();
               e.stopPropagation();
-              closeAllExpands(null);
-              return;
+              goChip(chip);
             }}
+          }});
 
-            const toggle = el.closest('button.sector-toggle[data-expand]');
-            if (toggle) {{
-              e.preventDefault();
-              e.stopPropagation();
-              toggleSector(toggle);
-              return;
-            }}
+          const tip = doc.createElement('div');
+          tip.id = 'etf-chart-tooltip';
+          tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;display:none;min-width:140px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(15,23,42,0.92);color:#f8fafc;font-size:11px;line-height:1.45;box-shadow:0 4px 14px rgba(15,23,42,0.2)';
+          doc.body.appendChild(tip);
 
-            const chip = el.closest('button.name-chip[data-symbol], a.name-chip[data-symbol]');
-            if (!chip) return;
-            e.preventDefault();
-            e.stopPropagation();
-            navigateChip(chip);
-          }}, true);
-
-          function ensureTooltip() {{
-            let tip = doc.getElementById('etf-chart-tooltip');
-            if (tip) return tip;
-            tip = doc.createElement('div');
-            tip.id = 'etf-chart-tooltip';
-            tip.className = 'etf-chart-tooltip';
-            tip.style.cssText = [
-              'position:fixed', 'z-index:10000', 'pointer-events:none', 'display:none',
-              'min-width:140px', 'padding:8px 10px', 'border:1px solid #cbd5e1',
-              'border-radius:6px', 'background:rgba(15,23,42,0.92)', 'color:#f8fafc',
-              'font-size:11px', 'line-height:1.45',
-              'box-shadow:0 4px 14px rgba(15,23,42,0.2)'
-            ].join(';');
-            doc.body.appendChild(tip);
-            return tip;
-          }}
-
-          function positionTooltip(tip, clientX, clientY) {{
-            const pad = 8;
-            const offset = 14;
+          function placeTip(x, y) {{
             tip.style.display = 'block';
             tip.style.left = '0px';
             tip.style.top = '0px';
-            const rect = tip.getBoundingClientRect();
-            const vw = window.innerWidth || doc.documentElement.clientWidth || 0;
-            const vh = window.innerHeight || doc.documentElement.clientHeight || 0;
-            let left = clientX + offset;
-            let top = clientY + offset;
-            if (left + rect.width + pad > vw) left = clientX - rect.width - offset;
-            if (top + rect.height + pad > vh) top = clientY - rect.height - offset;
-            if (left < pad) left = pad;
-            if (top < pad) top = pad;
-            if (left + rect.width + pad > vw) left = Math.max(pad, vw - rect.width - pad);
-            if (top + rect.height + pad > vh) top = Math.max(pad, vh - rect.height - pad);
-            tip.style.left = left + 'px';
-            tip.style.top = top + 'px';
+            const r = tip.getBoundingClientRect();
+            const vw = window.innerWidth || 0;
+            const vh = window.innerHeight || 0;
+            let left = x + 14;
+            let top = y + 14;
+            if (left + r.width + 8 > vw) left = x - r.width - 14;
+            if (top + r.height + 8 > vh) top = y - r.height - 14;
+            tip.style.left = Math.max(8, left) + 'px';
+            tip.style.top = Math.max(8, top) + 'px';
           }}
 
-          const tip = ensureTooltip();
           doc.addEventListener('mousemove', function (e) {{
             const pt = e.target && e.target.closest
-              ? e.target.closest('circle.etf-hover-point')
-              : null;
+              ? e.target.closest('circle.etf-hover-point') : null;
             if (!pt) {{
-              if (tip.style.display === 'block') tip.style.display = 'none';
+              tip.style.display = 'none';
               return;
             }}
-            const date = pt.getAttribute('data-date') || '';
-            const name = pt.getAttribute('data-name') || '';
-            const value = pt.getAttribute('data-value') || '';
             const color = pt.getAttribute('data-color') || '#94a3b8';
             tip.innerHTML =
-              '<div style="display:flex;gap:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span>' +
-              '<div>' +
-              '<div style="display:flex;gap:6px"><span style="color:#94a3b8;min-width:3.2rem">날짜</span><span>' + date + '</span></div>' +
-              '<div style="display:flex;gap:6px"><span style="color:#94a3b8;min-width:3.2rem">종목</span><span>' + name + '</span></div>' +
-              '<div style="display:flex;gap:6px"><span style="color:#94a3b8;min-width:3.2rem">정규화</span><span>' + value + '</span></div>' +
-              '</div></div>';
-            positionTooltip(tip, e.clientX, e.clientY);
+              '<div style="display:flex;gap:6px"><span style="width:8px;height:8px;border-radius:2px;margin-top:4px;background:' + color + '"></span><div>' +
+              '<div>날짜 ' + (pt.getAttribute('data-date') || '') + '</div>' +
+              '<div>종목 ' + (pt.getAttribute('data-name') || '') + '</div>' +
+              '<div>정규화 ' + (pt.getAttribute('data-value') || '') + '</div></div></div>';
+            placeTip(e.clientX, e.clientY);
             pt.setAttribute('fill', color);
             pt.setAttribute('fill-opacity', '0.35');
             pt.setAttribute('stroke', color);
             pt.setAttribute('stroke-width', '1.5');
             pt.setAttribute('r', '5');
-          }}, true);
+          }});
 
           doc.addEventListener('mouseout', function (e) {{
             const pt = e.target && e.target.closest
-              ? e.target.closest('circle.etf-hover-point')
-              : null;
+              ? e.target.closest('circle.etf-hover-point') : null;
             if (!pt) return;
-            const related = e.relatedTarget;
-            if (related && pt.contains(related)) return;
             tip.style.display = 'none';
             pt.setAttribute('fill', 'transparent');
             pt.setAttribute('fill-opacity', '1');
             pt.setAttribute('stroke', 'none');
             pt.setAttribute('r', '6');
-          }}, true);
+          }});
         }})();
         </script>
         """,
