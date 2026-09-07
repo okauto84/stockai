@@ -1,8 +1,9 @@
 import streamlit as st
 
+PAGE_DATA_UPDATE = "Data update"
 PAGE_ETF = "ETF 추세확인"
 PAGE_STOCK = "개별 종목 분석"
-PAGE_OPTIONS = [PAGE_ETF, PAGE_STOCK]
+PAGE_OPTIONS = [PAGE_DATA_UPDATE, PAGE_ETF, PAGE_STOCK]
 
 
 def inject_styles() -> None:
@@ -123,7 +124,7 @@ def apply_query_navigation() -> None:
 def render_top_bar() -> str:
     """상단 top-bar 탭 메뉴를 렌더하고 선택된 페이지명을 반환"""
     if st.session_state.get("nav_page") not in PAGE_OPTIONS:
-        st.session_state["nav_page"] = PAGE_ETF
+        st.session_state["nav_page"] = PAGE_DATA_UPDATE
 
     brand_col, tab_col = st.columns([1.2, 6])
     with brand_col:
@@ -166,6 +167,7 @@ def main() -> None:
     )
 
     # set_page_config 이후에 페이지 모듈을 불러와 Streamlit 초기화 충돌을 피함
+    import ref_dataupdate
     import ref_etf
     import ref_stockanly
 
@@ -181,7 +183,9 @@ def main() -> None:
         # radio 인스턴스화 이후 session_state[nav_page] 재설정은 금지 → 라우팅만 강제
         page = PAGE_STOCK
 
-    if page == PAGE_ETF:
+    if page == PAGE_DATA_UPDATE:
+        ref_dataupdate.render_page()
+    elif page == PAGE_ETF:
         ref_etf.render_page()
     elif page == PAGE_STOCK:
         ref_stockanly.render_page()
