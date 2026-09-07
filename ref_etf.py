@@ -25,6 +25,8 @@ KOSPI_SYMBOL = "^KS11"
 GRID_COLUMNS = list(ref_stockanly.GRID_COLUMNS)
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
+# 차트 HTML 캐시 무효화용 (legend 제거 등 UI 변경 시 증가)
+CHART_CACHE_VERSION = 2
 
 
 def sector_to_filename(sector: str) -> str:
@@ -383,9 +385,11 @@ def normalized_close_chart_svg(
 
 
 @st.cache_data(show_spinner=False)
-def _cached_sector_expand_content(sector: str, mtime: float) -> tuple[str, str]:
-    """섹터 JSON 기준 칩 HTML·차트 SVG 캐시 (mtime으로 무효화)"""
-    del mtime  # cache key only
+def _cached_sector_expand_content(
+    sector: str, mtime: float, cache_version: int = CHART_CACHE_VERSION
+) -> tuple[str, str]:
+    """섹터 JSON 기준 칩 HTML·차트 SVG 캐시 (mtime·version으로 무효화)"""
+    del mtime, cache_version  # cache key only
     try:
         payload = load_sector_payload(sector)
     except FileNotFoundError:
@@ -411,7 +415,7 @@ def _sector_expand_content(sector: str) -> tuple[str, str]:
     """섹터 펼침 영역용 칩·차트 HTML"""
     path = sector_json_path(sector)
     mtime = path.stat().st_mtime if path.exists() else 0.0
-    return _cached_sector_expand_content(sector, mtime)
+    return _cached_sector_expand_content(sector, mtime, CHART_CACHE_VERSION)
 
 
 def _sector_expand_row_html(
@@ -630,6 +634,11 @@ def build_sector_grid_html(
   }}
   .etf-hover-point {{
     cursor: crosshair;
+  }}
+  /* 구버전 캐시 HTML에 legend가 남아 있어도 숨김 (종목 리스트가 legend 역할) */
+  .etf-chart-legend,
+  .chart-legend-item {{
+    display: none !important;
   }}
 </style>
 <div class="etf-sector-grid-wrap">
