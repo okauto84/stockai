@@ -91,13 +91,20 @@ def inject_styles() -> None:
 
 def apply_query_navigation() -> None:
     """ETF 종목 클릭 시 개별 종목 분석 탭·검색 그리드로 전환"""
-    goto = str(st.query_params.get("goto", "")).strip().lower()
-    symbol = str(st.query_params.get("symbol", "")).strip().upper()
+    # Streamlit query_params는 list일 수 있음
+    def _qp(name: str) -> str:
+        raw = st.query_params.get(name, "")
+        if isinstance(raw, (list, tuple)):
+            raw = raw[0] if raw else ""
+        return str(raw).strip()
+
+    goto = _qp("goto").lower()
+    symbol = _qp("symbol").upper()
     if goto != "stock" or not symbol:
         return
 
-    sector = str(st.query_params.get("sector", "")).strip()
-    keyword = str(st.query_params.get("keyword", "")).strip()
+    sector = _qp("sector")
+    keyword = _qp("keyword")
     if not keyword:
         keyword = symbol.split(".")[0]
 
@@ -115,7 +122,7 @@ def apply_query_navigation() -> None:
     st.session_state["stock_list_keyword_ui"] = keyword
     st.session_state["stock_list_keyword_applied"] = keyword
 
-    # 전체 clear 대신 네비 키만 제거 (다른 쿼리 유지, 재진입 방지)
+    # 네비 키 제거 (재진입·중복 처리 방지)
     for key in ("goto", "symbol", "sector", "keyword"):
         if key in st.query_params:
             del st.query_params[key]

@@ -5,7 +5,6 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
-from urllib.parse import urlencode
 
 import pandas as pd
 import streamlit as st
@@ -18,7 +17,7 @@ MAX_GRID_ROWS = 12
 CHART_LOOKBACK_DAYS = 70
 CHART_X_TICK_COUNT = 14
 # 차트 HTML 캐시 무효화용 (legend 제거 등 UI 변경 시 증가)
-CHART_CACHE_VERSION = 3
+CHART_CACHE_VERSION = 4
 
 
 def sector_to_filename(sector: str) -> str:
@@ -142,20 +141,12 @@ def _stock_chip(
     *,
     color: str | None = None,
 ) -> str:
-    """개별 종목 분석 탭 이동용 칩(동일 창) HTML 생성"""
+    """개별 종목 분석 탭 이동용 칩 버튼 HTML 생성"""
     name = html.escape(etf["name"])
     symbol = str(etf["yahoosymbol"]).strip()
     keyword = str(etf.get("code") or etf["name"]).strip()
-    # <a> 딥링크 + data-* (JS 폴백). iframe 핸들러만으로는 클릭이 유실될 수 있음.
-    href = "?" + urlencode(
-        {
-            "goto": "stock",
-            "symbol": symbol,
-            "sector": sector,
-            "keyword": keyword,
-        }
-    )
-    href_q = html.escape(href, quote=True)
+    # iframe 안에서는 상대 ?goto=... 가 컴포넌트 URL로 해석되므로
+    # data-* + JS(window.top) 네비게이션만 사용한다.
     symbol_q = html.escape(symbol, quote=True)
     sector_q = html.escape(sector, quote=True)
     keyword_q = html.escape(keyword, quote=True)
@@ -166,10 +157,11 @@ def _stock_chip(
             f'<i class="chip-swatch" style="background:{html.escape(color, quote=True)}"></i>'
         )
     return (
-        f'<a class="name-chip" href="{href_q}" target="_top" rel="noopener" '
+        f'<button type="button" class="name-chip" '
         f'data-symbol="{symbol_q}" data-sector="{sector_q}" '
-        f'data-keyword="{keyword_q}" title="{title_q}">'
-        f"{swatch}{name}</a>"
+        f'data-keyword="{keyword_q}" title="{title_q}" '
+        f'onclick="window.__etfGoChip && window.__etfGoChip(this)">'
+        f"{swatch}{name}</button>"
     )
 
 
@@ -629,7 +621,7 @@ def build_sector_grid_html(
     gap: 8px;
     align-items: center;
   }}
-  a.name-chip {{
+  button.name-chip {{
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -642,10 +634,11 @@ def build_sector_grid_html(
     white-space: nowrap;
     line-height: 1.3;
     font-size: 10px;
+    font-family: inherit;
     cursor: pointer;
     user-select: none;
   }}
-  a.name-chip .chip-swatch {{
+  button.name-chip .chip-swatch {{
     display: inline-block;
     width: 8px;
     height: 8px;
@@ -653,7 +646,7 @@ def build_sector_grid_html(
     flex: 0 0 auto;
     pointer-events: none;
   }}
-  a.name-chip:hover {{
+  button.name-chip:hover {{
     background: #dbeafe;
     border-color: #93c5fd;
   }}
@@ -747,8 +740,7 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
         {grid_html}
         <script>
         (function () {{
-          const doc = document;
-          const navWin = window.parent || window;
+          const navWin = window.top || window.parent || window;
 
           function closeAllExpands(exceptId) {{
             doc.querySelectorAll('tr.etf-expand-row.is-open').forEach(function (row) {{
@@ -790,30 +782,39 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
           }}
 
           function navigateChip(chip) {{
-            const symbol = chip.getAttribute('data-symbol') || '';
+            if (!chip) return;
+            const symbol = (chip.getAttribute('data-symbol') || '').trim();
             const sector = chip.getAttribute('data-sector') || '';
             const keyword = chip.getAttribute('data-keyword') || '';
-            if (!symbol) {{
-              const href = chip.getAttribute('href');
-              if (href) navWin.location.assign(href);
-              return;
-            }}
+            if (!symbol) return;
             try {{
               const url = new URL(navWin.location.href);
+              // 기존 쿼리를 비우고 네비게이션 파라미터만 설정
+              url.search = '';
               url.searchParams.set('goto', 'stock');
               url.searchParams.set('symbol', symbol);
-              url.searchParams.set('sector', sector);
-              url.searchParams.set('keyword', keyword);
+              if (sector) url.searchParams.set('sector', sector);
+              if (keyword) url.searchParams.set('keyword', keyword);
               navWin.location.assign(url.toString());
             }} catch (err) {{
-              const href = chip.getAttribute('href');
-              if (href) navWin.location.assign(href);
+              // top 접근 실패 시 parent 경로로 재시도
+              try {{
+                const fallback = window.parent || window;
+                const url = new URL(fallback.location.href);
+                url.search = '';
+                url.searchParams.set('goto', 'stock');
+                url.searchParams.set('symbol', symbol);
+                if (sector) url.searchParams.set('sector', sector);
+                if (keyword) url.searchParams.set('keyword', keyword);
+                fallback.location.assign(url.toString());
+              }} catch (err2) {{}}
             }}
           }}
 
           window.__etfToggleSector = toggleSector;
           window.__etfOpenAll = openAllExpands;
           window.__etfCloseAll = function () {{ closeAllExpands(null); }};
+          window.__etfGoChip = navigateChip;
 
           doc.addEventListener('click', function (e) {{
             const el = e.target && e.target.nodeType === 3
@@ -844,7 +845,7 @@ def render_sector_grid_component(grid_html: str, *, pair_rows: int) -> None:
               return;
             }}
 
-            const chip = el.closest('a.name-chip, span.name-chip[data-symbol]');
+            const chip = el.closest('button.name-chip[data-symbol], a.name-chip[data-symbol]');
             if (!chip) return;
             e.preventDefault();
             e.stopPropagation();
