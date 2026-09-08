@@ -888,13 +888,6 @@ def render_close_chart(chart_df: pd.DataFrame, stock_name: str) -> None:
     zoom = alt.selection_interval(
         name="close_zoom", bind="scales", encodings=["x"]
     )
-    hover = alt.selection_point(
-        name="close_hover",
-        on="pointerover",
-        nearest=True,
-        empty=False,
-        clear="pointerout",
-    )
     x_hidden = chart_x_ordinal_encoding(show_labels=False)
     x_visible = chart_x_ordinal_encoding(show_labels=True)
     price_y = y_encoding("종가", "종가", labeled_df["종가"])
@@ -910,26 +903,21 @@ def render_close_chart(chart_df: pd.DataFrame, stock_name: str) -> None:
             detail="segment:N",
         )
     )
+    # selection_point(hover)는 ordinal vconcat+spacer 조합에서 Streamlit 렌더가
+    # 비어 보이는 경우가 있어, 고정 크기 포인트+툴팁만 사용한다.
     price_dots = (
         alt.Chart(price_points)
-        .mark_circle(filled=True)
+        .mark_circle(filled=True, size=LINE_POINT_SIZE)
         .encode(
             x=x_hidden,
             y=price_y,
             color=alt.Color("증감:N", scale=change_scale, legend=None),
-            size=hover_point_size(hover),
             tooltip=line_tooltips("종가"),
         )
     )
-    price_hit = (
-        alt.Chart(price_points)
-        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
-        .encode(x=x_hidden, y=price_y)
-        .add_params(hover)
-    )
     price_spacer = right_axis_spacer(price_points, x_hidden, "종가", labeled_df["종가"])
     price_chart = (
-        alt.layer(alt.layer(price_line, price_dots, price_hit), price_spacer)
+        alt.layer(alt.layer(price_line, price_dots), price_spacer)
         .resolve_scale(y="independent")
         .properties(height=CLOSE_PANEL_HEIGHT)
     )
