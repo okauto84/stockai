@@ -1,11 +1,16 @@
 import html
 import json
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
+import requests
 import streamlit as st
-import yfinance as yf
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 KOSPI_LIST_FILE = (
     Path(__file__).resolve().parent / "data" / "kospilist" / "kospilist.json"
@@ -29,6 +34,20 @@ GRID_COLUMNS = [
     "MA100",
     "MA150",
 ]
+NAVER_SISE_JSON_URL = "https://api.finance.naver.com/siseJson.naver"
+NAVER_STOCK_INTEGRATION_URL = "https://m.stock.naver.com/api/stock/{code}/integration"
+NAVER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+}
+# 사내 프록시/보안 프로그램 SSL 가로채기 환경 대응 (kospilist_dataproc와 동일)
+SSL_VERIFY = False
+KOSPI_NAVER_SYMBOL = "KOSPI"
+# MA150 워밍업 + 150거래일 표시를 위한 조회 기간
+NAVER_LOOKBACK_DAYS = 450
 COLOR_GRID_UP = "#dc2626"
 COLOR_GRID_DOWN = "#2563eb"
 CHANGE_UP = "상승"
@@ -52,7 +71,6 @@ MA_LABELS = ["종가", "MA10", "MA20", "MA30", "MA50", "MA100", "MA150"]
 MA_WINDOWS = [10, 20, 30, 50, 100, 150]
 CHART_HEIGHT = 373
 CHART_MONTHS = 3
-FETCH_PERIOD = "1y"
 CLOSE_PANEL_HEIGHT = 240
 VOLUME_PANEL_HEIGHT = 133
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
@@ -193,55 +211,180 @@ def finalize_chart(chart: alt.TopLevelSpec) -> alt.TopLevelSpec:
     return chart.interactive(bind_y=False)
 
 
+def to_naver_symbol(symbol: str) -> str:
+    """Yahoo/내부 심볼을 네이버 금융 심볼로 변환"""
+    raw = str(symbol).strip().upper()
+    if not raw:
+        raise ValueError("종목 심볼이 비어 있습니다.")
+    if raw in {"^KS11", "KS11", "KOSPI"}:
+        return KOSPI_NAVER_SYMBOL
+    if raw.endswith((".KS", ".KQ")):
+        raw = raw[:-3]
+    if raw.isdigit():
+        return raw.zfill(6)
+    return raw
+
+
+def parse_naver_number(value) -> float | None:
+    """네이버 표기 숫자('12.24배', '270,000')를 float로 변환"""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text in {"-", "N/A"}:
+        return None
+    match = re.search(r"-?\d+(?:,\d{3})*(?:\.\d+)?", text)
+    if not match:
+        return None
+    return float(match.group(0).replace(",", ""))
+
+
+def parse_korean_market_cap(value) -> float | None:
+    """네이버 시가총액 표기(예: '1,594조 5,725억')를 원 단위 숫자로 변환"""
+    if value is None:
+        return None
+    text = str(value).replace(",", "").replace(" ", "")
+    if not text or text == "-":
+        return None
+
+    total = 0.0
+    matched = False
+    for unit, scale in (("조", 1e12), ("억", 1e8), ("만", 1e4)):
+        match = re.search(rf"(-?\d+(?:\.\d+)?){unit}", text)
+        if match:
+            total += float(match.group(1)) * scale
+            matched = True
+    if matched:
+        return total
+    return parse_naver_number(value)
+
+
+def _naver_get(url: str, *, params: dict | None = None) -> requests.Response:
+    """네이버 금융 HTTP GET"""
+    response = requests.get(
+        url,
+        params=params,
+        headers=NAVER_HEADERS,
+        verify=SSL_VERIFY,
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response
+
+
+def fetch_naver_sise_history(naver_symbol: str) -> list[dict]:
+    """네이버 siseJson 일봉(종가·거래량) 수집"""
+    end = datetime.now()
+    start = end - timedelta(days=NAVER_LOOKBACK_DAYS)
+    response = _naver_get(
+        NAVER_SISE_JSON_URL,
+        params={
+            "symbol": naver_symbol,
+            "requestType": 1,
+            "startTime": start.strftime("%Y%m%d"),
+            "endTime": end.strftime("%Y%m%d"),
+            "timeframe": "day",
+        },
+    )
+    payload = json.loads(response.text.replace("'", '"').strip())
+    if not isinstance(payload, list) or len(payload) < 2:
+        return []
+
+    history: list[dict] = []
+    for row in payload[1:]:
+        if not isinstance(row, (list, tuple)) or len(row) < 6:
+            continue
+        close = row[4]
+        if close is None or (isinstance(close, float) and pd.isna(close)):
+            continue
+        date_raw = str(row[0]).strip()
+        if len(date_raw) != 8 or not date_raw.isdigit():
+            continue
+        volume = row[5]
+        history.append(
+            {
+                "date": f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:8]}",
+                "close": round(float(close), 2),
+                "volume": int(volume) if volume is not None and not pd.isna(volume) else None,
+            }
+        )
+    return history
+
+
+def fetch_naver_stock_info(naver_symbol: str) -> dict:
+    """네이버 종목 통합 API로 종목명·시가총액·PER 수집"""
+    if naver_symbol == KOSPI_NAVER_SYMBOL:
+        return {
+            "name": "코스피",
+            "currency": "KRW",
+            "market_cap": None,
+            "pe_ratio": None,
+        }
+
+    try:
+        response = _naver_get(
+            NAVER_STOCK_INTEGRATION_URL.format(code=naver_symbol)
+        )
+        payload = response.json()
+    except Exception:
+        return {
+            "name": naver_symbol,
+            "currency": "KRW",
+            "market_cap": None,
+            "pe_ratio": None,
+        }
+
+    info_map = {
+        item.get("code"): item.get("value")
+        for item in payload.get("totalInfos") or []
+        if isinstance(item, dict) and item.get("code")
+    }
+    return {
+        "name": payload.get("stockName") or naver_symbol,
+        "currency": "KRW",
+        "market_cap": parse_korean_market_cap(info_map.get("marketValue")),
+        "pe_ratio": parse_naver_number(info_map.get("per")),
+    }
+
+
 def fetch_chart(
     symbol: str,
-    range_period: str = FETCH_PERIOD,
+    range_period: str | None = None,
     *,
     include_info: bool = True,
 ) -> dict:
-    """yfinance로 주가 데이터 수집"""
-    ticker = yf.Ticker(symbol)
-    hist = ticker.history(period=range_period, interval="1d", auto_adjust=False)
+    """네이버 금융으로 주가(일봉) 데이터 수집
 
-    if hist.empty:
+    range_period는 하위 호환용으로 무시하고 NAVER_LOOKBACK_DAYS 기준 조회.
+    """
+    _ = range_period
+    naver_symbol = to_naver_symbol(symbol)
+    history = fetch_naver_sise_history(naver_symbol)
+    if not history:
         raise ValueError(f"'{symbol}' 종목을 찾을 수 없습니다.")
 
-    history = []
-    for ts, row in hist.iterrows():
-        close = row["Close"]
-        if pd.notna(close):
-            date = pd.Timestamp(ts).strftime("%Y-%m-%d")
-            volume = row["Volume"]
-            history.append(
-                {
-                    "date": date,
-                    "close": round(float(close), 2),
-                    "volume": int(volume) if pd.notna(volume) else None,
-                }
-            )
-
-    if not history:
-        raise ValueError(f"'{symbol}' 주가 데이터가 없습니다.")
-
-    info: dict = {}
-    if include_info:
-        try:
-            info = ticker.info or {}
-        except Exception:
-            info = {}
+    info = (
+        fetch_naver_stock_info(naver_symbol)
+        if include_info
+        else {
+            "name": symbol.upper(),
+            "currency": "KRW",
+            "market_cap": None,
+            "pe_ratio": None,
+        }
+    )
 
     return {
         "symbol": symbol.upper(),
-        "name": info.get("longName") or info.get("shortName") or symbol.upper(),
-        "currency": info.get("currency", "USD"),
-        "market_cap": info.get("marketCap"),
-        "pe_ratio": info.get("trailingPE"),
+        "name": info.get("name") or symbol.upper(),
+        "currency": info.get("currency", "KRW"),
+        "market_cap": info.get("market_cap"),
+        "pe_ratio": info.get("pe_ratio"),
         "history": history,
     }
 
 
 def fetch_summary(symbol: str) -> dict:
-    """yfinance로 기본 정보 수집 (fetch_chart include_info=True와 동일)"""
+    """네이버 금융으로 기본 정보 수집 (fetch_chart include_info=True와 동일)"""
     chart = fetch_chart(symbol, include_info=True)
     return {
         "market_cap": chart.get("market_cap"),
@@ -874,7 +1017,7 @@ def build_analysis_grid(
 ) -> pd.DataFrame:
     """최근 N거래일 분석 그리드 DataFrame 생성"""
     stock = stock_chart or fetch_chart(symbol)
-    kospi = kospi_chart or fetch_chart("^KS11", include_info=False)
+    kospi = kospi_chart or fetch_chart(KOSPI_NAVER_SYMBOL, include_info=False)
 
     stock_df = pd.DataFrame(stock["history"]).rename(
         columns={"close": "종가", "volume": "거래량"}
@@ -904,7 +1047,7 @@ def build_analysis_grid(
 def get_stock_data(symbol: str) -> dict:
     """선택 종목의 기본 정보 및 150일 분석 그리드 데이터 수집"""
     stock = fetch_chart(symbol)
-    kospi = fetch_chart("^KS11", include_info=False)
+    kospi = fetch_chart(KOSPI_NAVER_SYMBOL, include_info=False)
     grid = build_analysis_grid(symbol, stock_chart=stock, kospi_chart=kospi)
 
     history = stock["history"]
