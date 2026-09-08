@@ -3,7 +3,7 @@ import os
 import streamlit as st
 import streamlit.components.v1 as components
 
-PAGE_DATA_UPDATE = "Data update"
+PAGE_DATA_UPDATE = "ADMIN"
 PAGE_ETF = "ETF 추세확인"
 PAGE_STOCK = "개별 종목 분석"
 PAGE_OPTIONS = [PAGE_ETF, PAGE_STOCK, PAGE_DATA_UPDATE]
@@ -26,8 +26,8 @@ def get_data_update_secret() -> str:
 
 @st.dialog("관리자 인증")
 def prompt_data_update_auth() -> None:
-    """Data update 탭 진입 시 관리자 번호 입력 알람창"""
-    st.write("Data update를 실행하려면 관리자 번호를 입력하세요.")
+    """ADMIN 탭 진입 시 관리자 번호 입력 알람창"""
+    st.write("ADMIN을 실행하려면 관리자 번호를 입력하세요.")
     admin_no = st.text_input(
         "관리자 번호",
         type="password",
@@ -247,11 +247,11 @@ def render_top_bar() -> str:
 
 
 def gate_data_update_page() -> bool:
-    """Data update 탭 인증 게이트. 통과 시에만 True"""
+    """ADMIN 탭 인증 게이트. 통과 시에만 True"""
     if st.session_state.get(SESSION_DATA_UPDATE_OK):
         return True
     prompt_data_update_auth()
-    st.info("Data update는 관리자 번호 인증 후 사용할 수 있습니다.")
+    st.info("ADMIN은 관리자 번호 인증 후 사용할 수 있습니다.")
     return False
 
 
@@ -282,7 +282,7 @@ def main() -> None:
     )
 
     # set_page_config 이후에 페이지 모듈을 불러와 Streamlit 초기화 충돌을 피함
-    import ref_dataupdate
+    import admin
     import ref_etf
     import ref_stockanly
 
@@ -311,13 +311,13 @@ def main() -> None:
         page = force_page
         st.session_state.pop("_force_nav_page", None)
 
-    # Data update 탭을 벗어나면 인증 해제 → 다시 진입 시 알람창 재표시
+    # ADMIN 탭을 벗어나면 인증 해제 → 다시 진입 시 알람창 재표시
     if page != PAGE_DATA_UPDATE:
         st.session_state[SESSION_DATA_UPDATE_OK] = False
 
     if page == PAGE_DATA_UPDATE:
         if gate_data_update_page():
-            ref_dataupdate.render_page()
+            admin.render_page()
     elif page == PAGE_ETF:
         ref_etf.render_page()
     elif page == PAGE_STOCK:

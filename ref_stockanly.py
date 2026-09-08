@@ -1,6 +1,5 @@
 import html
 import json
-import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -225,39 +224,6 @@ def to_naver_symbol(symbol: str) -> str:
     return raw
 
 
-def parse_naver_number(value) -> float | None:
-    """네이버 표기 숫자('12.24배', '270,000')를 float로 변환"""
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text or text in {"-", "N/A"}:
-        return None
-    match = re.search(r"-?\d+(?:,\d{3})*(?:\.\d+)?", text)
-    if not match:
-        return None
-    return float(match.group(0).replace(",", ""))
-
-
-def parse_korean_market_cap(value) -> float | None:
-    """네이버 시가총액 표기(예: '1,594조 5,725억')를 원 단위 숫자로 변환"""
-    if value is None:
-        return None
-    text = str(value).replace(",", "").replace(" ", "")
-    if not text or text == "-":
-        return None
-
-    total = 0.0
-    matched = False
-    for unit, scale in (("조", 1e12), ("억", 1e8), ("만", 1e4)):
-        match = re.search(rf"(-?\d+(?:\.\d+)?){unit}", text)
-        if match:
-            total += float(match.group(1)) * scale
-            matched = True
-    if matched:
-        return total
-    return parse_naver_number(value)
-
-
 def _naver_get(url: str, *, params: dict | None = None) -> requests.Response:
     """네이버 금융 HTTP GET"""
     response = requests.get(
@@ -311,14 +277,9 @@ def fetch_naver_sise_history(naver_symbol: str) -> list[dict]:
 
 
 def fetch_naver_stock_info(naver_symbol: str) -> dict:
-    """네이버 종목 통합 API로 종목명·시가총액·PER 수집"""
+    """네이버 종목 통합 API로 종목명 수집"""
     if naver_symbol == KOSPI_NAVER_SYMBOL:
-        return {
-            "name": "코스피",
-            "currency": "KRW",
-            "market_cap": None,
-            "pe_ratio": None,
-        }
+        return {"name": "코스피", "currency": "KRW"}
 
     try:
         response = _naver_get(
@@ -326,23 +287,11 @@ def fetch_naver_stock_info(naver_symbol: str) -> dict:
         )
         payload = response.json()
     except Exception:
-        return {
-            "name": naver_symbol,
-            "currency": "KRW",
-            "market_cap": None,
-            "pe_ratio": None,
-        }
+        return {"name": naver_symbol, "currency": "KRW"}
 
-    info_map = {
-        item.get("code"): item.get("value")
-        for item in payload.get("totalInfos") or []
-        if isinstance(item, dict) and item.get("code")
-    }
     return {
         "name": payload.get("stockName") or naver_symbol,
         "currency": "KRW",
-        "market_cap": parse_korean_market_cap(info_map.get("marketValue")),
-        "pe_ratio": parse_naver_number(info_map.get("per")),
     }
 
 
@@ -365,44 +314,21 @@ def fetch_chart(
     info = (
         fetch_naver_stock_info(naver_symbol)
         if include_info
-        else {
-            "name": symbol.upper(),
-            "currency": "KRW",
-            "market_cap": None,
-            "pe_ratio": None,
-        }
+        else {"name": symbol.upper(), "currency": "KRW"}
     )
 
     return {
         "symbol": symbol.upper(),
         "name": info.get("name") or symbol.upper(),
         "currency": info.get("currency", "KRW"),
-        "market_cap": info.get("market_cap"),
-        "pe_ratio": info.get("pe_ratio"),
         "history": history,
     }
 
 
 def fetch_summary(symbol: str) -> dict:
-    """네이버 금융으로 기본 정보 수집 (fetch_chart include_info=True와 동일)"""
+    """네이버 금융으로 기본 정보 수집 (종목명)"""
     chart = fetch_chart(symbol, include_info=True)
-    return {
-        "market_cap": chart.get("market_cap"),
-        "pe_ratio": chart.get("pe_ratio"),
-        "name": chart.get("name"),
-    }
-
-
-def format_market_cap(value, prefix: str) -> str:
-    if not value:
-        return "-"
-    if value >= 1e12:
-        return f"{prefix}{(value / 1e12):.2f}T"
-    if value >= 1e9:
-        return f"{prefix}{(value / 1e9):.2f}B"
-    if value >= 1e6:
-        return f"{prefix}{(value / 1e6):.2f}M"
-    return f"{prefix}{value:,.0f}"
+    return {"name": chart.get("name")}
 
 
 def format_with_comma(value, decimals: int = 0) -> str:
@@ -1073,8 +999,6 @@ def get_stock_data(symbol: str) -> dict:
         "price": current,
         "price_prefix": prefix,
         "change_pct": round(change_pct, 2),
-        "market_cap": stock.get("market_cap"),
-        "pe_ratio": stock.get("pe_ratio"),
         "grid": grid,
     }
 
@@ -1084,18 +1008,28 @@ def render_stock_detail(data: dict) -> None:
     prefix = data["price_prefix"]
     change = data["change_pct"]
     change_label = f"{change:+.2f}%"
+    if change > 0:
+        change_color = COLOR_GRID_UP
+    elif change < 0:
+        change_color = COLOR_GRID_DOWN
+    else:
+        change_color = "#64748b"
 
     st.markdown(
         f"<div style='font-size:14px !important; font-weight:600; "
-        f"margin:0.4rem 0 0.6rem 0;'>"
+        f"margin:0.4rem 0 0.35rem 0;'>"
         f"{html.escape(str(data['name']))} "
-        f"({html.escape(str(data['symbol']))})</div>",
+        f"({html.escape(str(data['symbol']))})</div>"
+        f"<div style='font-size:13px; margin:0 0 0.75rem 0; "
+        f"display:flex; align-items:baseline; gap:0.55rem;'>"
+        f"<span style='color:#64748b;'>현재가</span>"
+        f"<span style='font-size:22px; font-weight:700; letter-spacing:-0.02em;'>"
+        f"{html.escape(prefix)}{data['price']:,.2f}</span>"
+        f"<span style='font-size:16px; font-weight:600; color:{change_color};'>"
+        f"{html.escape(change_label)}</span>"
+        f"</div>",
         unsafe_allow_html=True,
     )
-    metric_col1, metric_col2, metric_col3 = st.columns(3)
-    metric_col1.metric("현재가", f"{prefix}{data['price']:,.2f}", change_label)
-    metric_col2.metric("시가총액", format_market_cap(data["market_cap"], prefix))
-    metric_col3.metric("PER", f"{data['pe_ratio']:.2f}" if data["pe_ratio"] else "-")
 
     st.markdown("#### 150일 분석 그리드")
     st.caption(
