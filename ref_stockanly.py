@@ -993,7 +993,11 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     kospi_hit = (
         alt.Chart(kospi_df)
         .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
-        .encode(x=x_enc, y=kospi_y)
+        .encode(
+            x=x_enc,
+            y=kospi_y,
+            tooltip=line_tooltips("코스피"),
+        )
         .add_params(hover)
     )
 
@@ -1020,7 +1024,11 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     rs_hit = (
         alt.Chart(rs_df)
         .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
-        .encode(x=x_enc, y=rs_y)
+        .encode(
+            x=x_enc,
+            y=rs_y,
+            tooltip=line_tooltips("RS지수"),
+        )
         .add_params(hover)
     )
 
@@ -1112,7 +1120,11 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
     hit = (
         alt.Chart(long_df)
         .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
-        .encode(x=x_enc, y=price_y)
+        .encode(
+            x=x_enc,
+            y=price_y,
+            tooltip=line_tooltips("값"),
+        )
         .add_params(hover)
     )
 
