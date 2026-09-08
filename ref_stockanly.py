@@ -881,6 +881,84 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     st.altair_chart(chart, use_container_width=True)
 
 
+def normalize_to_0_1000(values: pd.Series) -> pd.Series:
+    """시계열을 구간 최소·최대 기준 0~1000으로 정규화 (동일값이면 500)"""
+    numeric = pd.to_numeric(values, errors="coerce")
+    lo = float(numeric.min()) if numeric.notna().any() else float("nan")
+    hi = float(numeric.max()) if numeric.notna().any() else float("nan")
+    if pd.isna(lo) or pd.isna(hi) or hi == lo:
+        return pd.Series(500.0, index=values.index, dtype=float)
+    return ((numeric - lo) / (hi - lo) * 1000.0).astype(float)
+
+
+def build_kospi_rs_normalized_df(chart_df: pd.DataFrame) -> pd.DataFrame:
+    """코스피·RS지수를 각각 0~1000으로 정규화한 차트용 DataFrame"""
+    norm_df = chart_df.copy()
+    norm_df["코스피"] = normalize_to_0_1000(norm_df["코스피"]).round(2)
+    norm_df["RS지수"] = normalize_to_0_1000(norm_df["RS지수"]).round(2)
+    return norm_df
+
+
+def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
+    """코스피·RS지수 0~1000 정규화 이중 축 차트 (원본과 동일 스타일)"""
+    norm_df = build_kospi_rs_normalized_df(chart_df)
+    color_scale = alt.Scale(
+        domain=["코스피", "RS지수"],
+        range=[COLOR_KOSPI, COLOR_RS],
+    )
+    y_scale = alt.Scale(domain=[0, 1000], nice=False)
+    zoom = chart_zoom()
+
+    kospi_y = alt.Y(
+        "코스피:Q",
+        title="코스피(정규화)",
+        scale=y_scale,
+        axis=alt.Axis(format=",.0f", orient="left"),
+    )
+    rs_y = alt.Y(
+        "RS지수:Q",
+        title="RS지수(정규화)",
+        scale=y_scale,
+        axis=alt.Axis(format=",.0f", orient="right"),
+    )
+
+    kospi_line = (
+        alt.Chart(norm_df.assign(구분="코스피"))
+        .mark_line(strokeWidth=1)
+        .encode(
+            x=chart_x_encoding(),
+            y=kospi_y,
+            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("코스피:Q", title="코스피(정규화)", format=",.1f"),
+            ],
+        )
+    )
+
+    rs_line = (
+        alt.Chart(norm_df.assign(구분="RS지수"))
+        .mark_line(strokeWidth=1)
+        .encode(
+            x=chart_x_encoding(),
+            y=rs_y,
+            color=alt.Color("구분:N", scale=color_scale, legend=None),
+            tooltip=[
+                DATE_TOOLTIP,
+                alt.Tooltip("RS지수:Q", title="RS지수(정규화)", format=",.1f"),
+            ],
+        )
+    )
+
+    chart = finalize_chart(
+        alt.layer(kospi_line, rs_line)
+        .add_params(zoom)
+        .resolve_scale(y="independent")
+        .properties(height=CHART_HEIGHT)
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
 def render_ma_chart(chart_df: pd.DataFrame) -> None:
     """종가·이동평균선 차트"""
     zoom = chart_zoom()
@@ -1069,6 +1147,13 @@ def render_stock_detail(data: dict) -> None:
         f"코스피(좌측) · RS지수(우측, {RS_WINDOW}일 상대강도)"
     )
     render_kospi_rs_chart(chart_df)
+
+    st.markdown(f"#### {CHART_MONTHS}개월 코스피 RS지수(정규화)")
+    st.caption(
+        f"분석 그리드 기반 · 최근 {CHART_MONTHS}개월 · "
+        "코스피·RS지수 각각 0~1000 정규화(구간 최소·최대)"
+    )
+    render_kospi_rs_normalized_chart(chart_df)
 
     st.markdown(f"#### {CHART_MONTHS}개월 종가·이동평균선")
     st.caption(
