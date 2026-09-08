@@ -79,6 +79,19 @@ HOVER_POINT_SIZE = 90
 HOVER_HIT_SIZE = 160
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
 DATE_TOOLTIP = alt.Tooltip("date:T", title="날짜", format="%Y-%m-%d")
+NAME_TOOLTIP = alt.Tooltip("종목명:N", title="종목명")
+
+
+def line_value_tooltip(field: str) -> alt.Tooltip:
+    """라인 차트 공통 값 툴팁"""
+    return alt.Tooltip(f"{field}:Q", title="값", format=",.0f")
+
+
+def line_tooltips(value_field: str) -> list:
+    """라인 차트 공통 툴팁: 날짜 · 종목명 · 값 (ETF 차트와 동일 구성)"""
+    return [DATE_TOOLTIP, NAME_TOOLTIP, line_value_tooltip(value_field)]
+
+
 SECTOR_ORDER = [
     "반도체",
     "기계",
@@ -855,7 +868,7 @@ def build_volume_change_df(chart_df: pd.DataFrame) -> pd.DataFrame:
     return volume_df.iloc[1:].reset_index(drop=True)
 
 
-def render_close_chart(chart_df: pd.DataFrame) -> None:
+def render_close_chart(chart_df: pd.DataFrame, stock_name: str) -> None:
     """종목 종가(상단)·거래량(하단) 차트"""
     labeled_df = add_date_label(chart_df)
     price_segments = build_price_line_segments(labeled_df)
@@ -864,12 +877,23 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
         st.info("표시할 종가 데이터가 없습니다.")
         return
 
-    price_points = labeled_df.sort_values("date")[["date", "date_label", "종가"]]
+    price_points = labeled_df.sort_values("date")[
+        ["date", "date_label", "종가"]
+    ].copy()
+    price_points["종목명"] = stock_name
+    price_points["증감"] = compare_to_previous(price_points["종가"]).values
 
     change_scale = alt.Scale(domain=CHANGE_DOMAIN, range=CHANGE_COLORS)
     # 페이지 내 다른 차트와 selection 이름이 겹치면 첫 차트가 비어 보일 수 있음
     zoom = alt.selection_interval(
         name="close_zoom", bind="scales", encodings=["x"]
+    )
+    hover = alt.selection_point(
+        name="close_hover",
+        on="pointerover",
+        nearest=True,
+        empty=False,
+        clear="pointerout",
     )
     x_hidden = chart_x_ordinal_encoding(show_labels=False)
     x_visible = chart_x_ordinal_encoding(show_labels=True)
@@ -886,21 +910,26 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
             detail="segment:N",
         )
     )
-    price_hover = (
+    price_dots = (
         alt.Chart(price_points)
-        .mark_circle(opacity=0, size=80)
+        .mark_circle(filled=True)
         .encode(
             x=x_hidden,
             y=price_y,
-            tooltip=[
-                DATE_TOOLTIP,
-                alt.Tooltip("종가:Q", title="종가", format=",.0f"),
-            ],
+            color=alt.Color("증감:N", scale=change_scale, legend=None),
+            size=hover_point_size(hover),
+            tooltip=line_tooltips("종가"),
         )
+    )
+    price_hit = (
+        alt.Chart(price_points)
+        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
+        .encode(x=x_hidden, y=price_y)
+        .add_params(hover)
     )
     price_spacer = right_axis_spacer(price_points, x_hidden, "종가", labeled_df["종가"])
     price_chart = (
-        alt.layer(alt.layer(price_line, price_hover), price_spacer)
+        alt.layer(alt.layer(price_line, price_dots, price_hit), price_spacer)
         .resolve_scale(y="independent")
         .properties(height=CLOSE_PANEL_HEIGHT)
     )
@@ -949,8 +978,8 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     kospi_y = y_encoding("코스피", "코스피", chart_df["코스피"], orient="left")
     rs_y = y_encoding("RS지수", "RS지수", chart_df["RS지수"], orient="right")
     x_enc = chart_x_encoding()
-    kospi_df = chart_df.assign(구분="코스피")
-    rs_df = chart_df.assign(구분="RS지수")
+    kospi_df = chart_df.assign(구분="코스피", 종목명="코스피")
+    rs_df = chart_df.assign(구분="RS지수", 종목명="RS지수")
 
     # Color 스케일을 라인에 두고 shared로 고정 → 범례도 선(symbol)으로 표시
     kospi_line = (
@@ -970,11 +999,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
             y=kospi_y,
             color=alt.Color("구분:N", scale=color_scale, legend=None),
             size=hover_point_size(hover),
-            tooltip=[
-                DATE_TOOLTIP,
-                alt.Tooltip("구분:N", title="구분"),
-                alt.Tooltip("코스피:Q", title="값", format=",.0f"),
-            ],
+            tooltip=line_tooltips("코스피"),
         )
     )
     kospi_hit = (
@@ -1001,11 +1026,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
             y=rs_y,
             color=alt.Color("구분:N", scale=color_scale, legend=None),
             size=hover_point_size(hover),
-            tooltip=[
-                DATE_TOOLTIP,
-                alt.Tooltip("구분:N", title="구분"),
-                alt.Tooltip("RS지수:Q", title="값", format=",.0f"),
-            ],
+            tooltip=line_tooltips("RS지수"),
         )
     )
     rs_hit = (
@@ -1055,6 +1076,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
         var_name="구분",
         value_name="값",
     ).dropna(subset=["값"])
+    long_df["종목명"] = long_df["구분"]
     ma_only = long_df[long_df["구분"] != "종가"]
     close_only = long_df[long_df["구분"] == "종가"]
 
@@ -1075,11 +1097,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
             y=price_y,
             color=alt.Color("구분:N", scale=color_scale, legend=None),
             size=hover_point_size(hover),
-            tooltip=[
-                DATE_TOOLTIP,
-                alt.Tooltip("구분:N", title="구분"),
-                alt.Tooltip("값:Q", title="값", format=",.0f"),
-            ],
+            tooltip=line_tooltips("값"),
         )
     )
 
@@ -1100,11 +1118,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
             y=price_y,
             color=alt.Color("구분:N", scale=color_scale, legend=None),
             size=hover_point_size(hover),
-            tooltip=[
-                DATE_TOOLTIP,
-                alt.Tooltip("구분:N", title="구분"),
-                alt.Tooltip("값:Q", title="값", format=",.0f"),
-            ],
+            tooltip=line_tooltips("값"),
         )
     )
     hit = (
@@ -1240,7 +1254,7 @@ def render_stock_detail(data: dict) -> None:
         f"분석 그리드 기반 · 최근 {CHART_MONTHS}개월 · "
         "상단 종가 · 하단 거래량"
     )
-    render_close_chart(chart_df)
+    render_close_chart(chart_df, str(data["name"]))
 
     st.markdown(f"#### {CHART_MONTHS}개월 코스피·RS지수")
     st.caption(
