@@ -860,18 +860,35 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
     labeled_df = add_date_label(chart_df)
     price_segments = build_price_line_segments(labeled_df)
     volume_df = build_volume_change_df(labeled_df)
+    if labeled_df.empty:
+        st.info("표시할 종가 데이터가 없습니다.")
+        return
+
     price_points = labeled_df.sort_values("date")[
         ["date", "date_label", "종가"]
     ].copy()
     price_points["증감"] = compare_to_previous(price_points["종가"]).values
 
     change_scale = alt.Scale(domain=CHANGE_DOMAIN, range=CHANGE_COLORS)
-    zoom = chart_zoom()
-    hover = chart_point_hover()
+    # 차트별 고유 파라미터명 — 중복 selection으로 스펙이 깨지지 않도록 고정
+    zoom = alt.selection_interval(
+        name="close_zoom", bind="scales", encodings=["x"]
+    )
+    hover = alt.selection_point(
+        name="close_hover",
+        on="pointerover",
+        nearest=True,
+        empty=False,
+        clear="pointerout",
+    )
     x_hidden = chart_x_ordinal_encoding(show_labels=False)
     x_visible = chart_x_ordinal_encoding(show_labels=True)
     price_y = y_encoding("종가", "종가", labeled_df["종가"])
-    volume_y = y_encoding("거래량", "거래량", volume_df["거래량"])
+    volume_y = y_encoding(
+        "거래량",
+        "거래량",
+        volume_df["거래량"] if not volume_df.empty else pd.Series([0.0]),
+    )
 
     price_line = (
         alt.Chart(price_segments)
@@ -885,59 +902,50 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
     )
     price_dots = (
         alt.Chart(price_points)
-        .mark_circle(filled=True, opacity=1)
+        .mark_circle(filled=True)
         .encode(
             x=x_hidden,
             y=price_y,
             color=alt.Color("증감:N", scale=change_scale, legend=None),
-            size=hover_point_size(hover),
+            size=alt.condition(
+                hover, alt.value(HOVER_POINT_SIZE), alt.value(LINE_POINT_SIZE)
+            ),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("종가:Q", title="종가", format=",.0f"),
             ],
         )
-    )
-    price_hit = (
-        alt.Chart(price_points)
-        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
-        .encode(x=x_hidden, y=price_y)
         .add_params(hover)
     )
-    price_spacer = right_axis_spacer(price_points, x_hidden, "종가", labeled_df["종가"])
-    price_chart = (
-        alt.layer(alt.layer(price_line, price_dots, price_hit), price_spacer)
-        .resolve_scale(y="independent")
-        .properties(height=CLOSE_PANEL_HEIGHT)
+
+    price_chart = alt.layer(price_line, price_dots).properties(
+        height=CLOSE_PANEL_HEIGHT
     )
 
-    volume_bars = (
-        alt.Chart(volume_df)
-        .mark_bar()
-        .encode(
-            x=x_visible,
-            y=volume_y,
-            color=alt.Color("증감:N", scale=change_scale, legend=None),
-            tooltip=[
-                DATE_TOOLTIP,
-                alt.Tooltip("거래량:Q", title="거래량", format=",.0f"),
-                alt.Tooltip("증감:N", title="전일대비"),
-            ],
+    if volume_df.empty:
+        chart = price_chart.add_params(zoom)
+    else:
+        volume_bars = (
+            alt.Chart(volume_df)
+            .mark_bar()
+            .encode(
+                x=x_visible,
+                y=volume_y,
+                color=alt.Color("증감:N", scale=change_scale, legend=None),
+                tooltip=[
+                    DATE_TOOLTIP,
+                    alt.Tooltip("거래량:Q", title="거래량", format=",.0f"),
+                    alt.Tooltip("증감:N", title="전일대비"),
+                ],
+            )
+            .properties(height=VOLUME_PANEL_HEIGHT)
         )
-    )
-    volume_spacer = right_axis_spacer(
-        volume_df, x_visible, "거래량", volume_df["거래량"]
-    )
-    volume_chart = (
-        alt.layer(volume_bars, volume_spacer)
-        .resolve_scale(y="independent")
-        .properties(height=VOLUME_PANEL_HEIGHT)
-    )
+        chart = (
+            alt.vconcat(price_chart, volume_bars)
+            .resolve_scale(x="shared", color="shared")
+            .add_params(zoom)
+        )
 
-    chart = finalize_chart(
-        alt.vconcat(price_chart, volume_chart)
-        .resolve_scale(x="shared", color="shared")
-        .add_params(zoom)
-    )
     st.altair_chart(chart, use_container_width=True)
 
 
