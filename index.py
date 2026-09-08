@@ -198,8 +198,8 @@ def apply_query_navigation() -> None:
 
     sector = _qp("sector")
     keyword = _qp("keyword")
-    if not keyword:
-        keyword = symbol.split(".")[0]
+    # 개별종목분석 검색은 종목명만 매칭 — 코드/심볼을 keyword로 넣지 않음
+    # (비어 있으면 stockanly에서 야후심볼 → 종목명으로 보정)
 
     # 위젯 생성 전에 탭·심볼·필터를 확정 (durable force)
     st.session_state["symbol"] = symbol

@@ -256,7 +256,8 @@ def _stock_chip(
     """개별 종목 분석 탭 이동용 칩 HTML (상대 쿼리 · 동일 창)"""
     name = html.escape(etf["name"])
     symbol = str(etf["yahoosymbol"]).strip()
-    keyword = str(etf.get("code") or etf["name"]).strip()
+    # 개별종목분석 탭 검색은 종목명만 대상으로 하므로 name을 keyword로 전달
+    keyword = str(etf["name"]).strip()
     # 현재 경로를 유지하는 상대 쿼리 (?...) — 하드코딩 /? 는 배포 경로에서 깨짐
     href = "?" + urlencode(
         {

@@ -632,10 +632,19 @@ def render_stock_list_grid() -> None:
     if st.session_state["stock_list_sector_applied"] not in sector_options:
         st.session_state["stock_list_sector_applied"] = "전체"
 
-    # ETF 칩 진입: 위젯 생성 전에 검색 가능하도록 섹터 완화
+    # ETF 칩 진입: 위젯 생성 전에 종목명 키워드·섹터를 보정
     pending_sym = st.session_state.get("_pending_stock_select_symbol")
     if pending_sym:
         pending_u = str(pending_sym).strip().upper()
+        match_rows = stock_df[
+            stock_df["야후심볼"].astype(str).str.upper() == pending_u
+        ]
+        if not match_rows.empty:
+            pending_name = str(match_rows.iloc[0]["종목명"]).strip()
+            if pending_name:
+                st.session_state["stock_list_keyword_applied"] = pending_name
+                st.session_state["stock_list_keyword_ui"] = pending_name
+
         trial_df = filter_stock_list(
             stock_df,
             st.session_state["stock_list_market_applied"],
