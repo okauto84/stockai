@@ -4,8 +4,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 PAGE_DATA_UPDATE = "ADMIN"
-PAGE_ETF = "ETF 추세확인"
-PAGE_STOCK = "개별 종목 분석"
+PAGE_ETF = "ETF추세"
+PAGE_STOCK = "개별종목"
 PAGE_OPTIONS = [PAGE_ETF, PAGE_STOCK, PAGE_DATA_UPDATE]
 SESSION_DATA_UPDATE_OK = "data_update_authenticated"
 

@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -72,8 +73,12 @@ CHART_HEIGHT = 373
 CHART_MONTHS = 3
 CLOSE_PANEL_HEIGHT = 240
 VOLUME_PANEL_HEIGHT = 133
+# 라인 차트 날짜별 원형점 (기본·마우스오버 확대 — ETF 차트와 동일 감도)
+LINE_POINT_SIZE = 28
+HOVER_POINT_SIZE = 90
+HOVER_HIT_SIZE = 160
 LEGEND_BOTTOM = alt.Legend(orient="bottom", direction="horizontal", title=None)
-DATE_TOOLTIP = alt.Tooltip("date:T", title="날짜", format="%Y.%m.%d")
+DATE_TOOLTIP = alt.Tooltip("date:T", title="날짜", format="%Y-%m-%d")
 SECTOR_ORDER = [
     "반도체",
     "기계",
@@ -167,6 +172,97 @@ def chart_x_encoding(show_labels: bool = True, *, padding: float | None = None) 
 def chart_zoom() -> alt.selection_interval:
     """X축 확대/이동 (드래그·휠·더블클릭)"""
     return alt.selection_interval(bind="scales", encodings=["x"])
+
+
+def chart_point_hover() -> alt.Parameter:
+    """라인 포인트 마우스오버 선택 (ETF 차트와 동일: 근접 포인트 강조)"""
+    return alt.selection_point(
+        on="pointerover",
+        nearest=True,
+        empty=False,
+        clear="pointerout",
+    )
+
+
+def hover_point_size(hover: alt.Parameter):
+    """기본 점 → 마우스오버 시 확대"""
+    return alt.condition(
+        hover,
+        alt.value(HOVER_POINT_SIZE),
+        alt.value(LINE_POINT_SIZE),
+    )
+
+
+def inject_chart_hover_ui() -> None:
+    """Altair(Vega) 툴팁을 ETF 차트와 동일한 다크 스타일로 맞춘다"""
+    components.html(
+        """
+        <script>
+        (function () {
+          var CSS_ID = 'stockai-vega-tip-style';
+          var CSS_TEXT = [
+            '#vg-tooltip-element,',
+            '#vg-tooltip-element.vg-tooltip,',
+            '.vg-tooltip {',
+            '  background: rgba(15,23,42,0.92) !important;',
+            '  color: #f8fafc !important;',
+            '  border: 1px solid #cbd5e1 !important;',
+            '  border-radius: 6px !important;',
+            '  font-size: 11px !important;',
+            '  line-height: 1.45 !important;',
+            '  box-shadow: 0 4px 14px rgba(15,23,42,0.2) !important;',
+            '  padding: 8px 10px !important;',
+            '  max-width: 360px !important;',
+            '  white-space: normal !important;',
+            '  word-break: keep-all !important;',
+            '}',
+            '#vg-tooltip-element table,',
+            '.vg-tooltip table { border-collapse: collapse !important; }',
+            '#vg-tooltip-element td.key,',
+            '.vg-tooltip td.key {',
+            '  color: #cbd5e1 !important;',
+            '  padding: 1px 8px 1px 0 !important;',
+            '}',
+            '#vg-tooltip-element td.value,',
+            '.vg-tooltip td.value {',
+            '  color: #f8fafc !important;',
+            '  padding: 1px 0 !important;',
+            '}'
+          ].join('\\n');
+
+          function styleDoc(doc) {
+            if (!doc || !doc.documentElement) return;
+            if (doc.getElementById(CSS_ID)) return;
+            var style = doc.createElement('style');
+            style.id = CSS_ID;
+            style.textContent = CSS_TEXT;
+            (doc.head || doc.documentElement).appendChild(style);
+          }
+
+          function scan() {
+            try { styleDoc(document); } catch (e) {}
+            var frames = document.querySelectorAll('iframe');
+            for (var i = 0; i < frames.length; i++) {
+              try { styleDoc(frames[i].contentDocument); } catch (e2) {}
+            }
+            try {
+              if (window.parent && window.parent !== window) {
+                styleDoc(window.parent.document);
+                var pframes = window.parent.document.querySelectorAll('iframe');
+                for (var j = 0; j < pframes.length; j++) {
+                  try { styleDoc(pframes[j].contentDocument); } catch (e3) {}
+                }
+              }
+            } catch (e4) {}
+          }
+
+          scan();
+          setInterval(scan, 800);
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def y_domain(values: pd.Series, padding_ratio: float = 0.05) -> list[float]:
@@ -764,10 +860,14 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
     labeled_df = add_date_label(chart_df)
     price_segments = build_price_line_segments(labeled_df)
     volume_df = build_volume_change_df(labeled_df)
-    price_points = labeled_df.sort_values("date")[["date", "date_label", "종가"]]
+    price_points = labeled_df.sort_values("date")[
+        ["date", "date_label", "종가"]
+    ].copy()
+    price_points["증감"] = compare_to_previous(price_points["종가"]).values
 
     change_scale = alt.Scale(domain=CHANGE_DOMAIN, range=CHANGE_COLORS)
     zoom = chart_zoom()
+    hover = chart_point_hover()
     x_hidden = chart_x_ordinal_encoding(show_labels=False)
     x_visible = chart_x_ordinal_encoding(show_labels=True)
     price_y = y_encoding("종가", "종가", labeled_df["종가"])
@@ -783,21 +883,29 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
             detail="segment:N",
         )
     )
-    price_hover = (
+    price_dots = (
         alt.Chart(price_points)
-        .mark_circle(opacity=0, size=80)
+        .mark_circle(filled=True, opacity=1)
         .encode(
             x=x_hidden,
             y=price_y,
+            color=alt.Color("증감:N", scale=change_scale, legend=None),
+            size=hover_point_size(hover),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("종가:Q", title="종가", format=",.0f"),
             ],
         )
     )
+    price_hit = (
+        alt.Chart(price_points)
+        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
+        .encode(x=x_hidden, y=price_y)
+        .add_params(hover)
+    )
     price_spacer = right_axis_spacer(price_points, x_hidden, "종가", labeled_df["종가"])
     price_chart = (
-        alt.layer(alt.layer(price_line, price_hover), price_spacer)
+        alt.layer(alt.layer(price_line, price_dots, price_hit), price_spacer)
         .resolve_scale(y="independent")
         .properties(height=CLOSE_PANEL_HEIGHT)
     )
@@ -841,36 +949,65 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     )
 
     zoom = chart_zoom()
+    hover = chart_point_hover()
     kospi_y = y_encoding("코스피", "코스피", chart_df["코스피"], orient="left")
     rs_y = y_encoding("RS지수", "RS지수", chart_df["RS지수"], orient="right")
+    x_enc = chart_x_encoding()
+    kospi_df = chart_df.assign(구분="코스피")
+    rs_df = chart_df.assign(구분="RS지수")
 
-    # 레이어별 Color 스케일 추론으로 색이 뒤바뀌지 않도록 stroke 색을 강제 고정
     kospi_line = (
-        alt.Chart(chart_df.assign(구분="코스피"))
+        alt.Chart(kospi_df)
         .mark_line(strokeWidth=1)
+        .encode(x=x_enc, y=kospi_y, color=alt.value(COLOR_KOSPI))
+    )
+    kospi_dots = (
+        alt.Chart(kospi_df)
+        .mark_circle(filled=True)
         .encode(
-            x=chart_x_encoding(),
+            x=x_enc,
             y=kospi_y,
             color=alt.value(COLOR_KOSPI),
+            size=hover_point_size(hover),
             tooltip=[
                 DATE_TOOLTIP,
-                alt.Tooltip("코스피:Q", title="코스피", format=",.0f"),
+                alt.Tooltip("구분:N", title="구분"),
+                alt.Tooltip("코스피:Q", title="값", format=",.0f"),
             ],
         )
     )
+    kospi_hit = (
+        alt.Chart(kospi_df)
+        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
+        .encode(x=x_enc, y=kospi_y)
+        .add_params(hover)
+    )
 
     rs_line = (
-        alt.Chart(chart_df.assign(구분="RS지수"))
+        alt.Chart(rs_df)
         .mark_line(strokeWidth=1)
+        .encode(x=x_enc, y=rs_y, color=alt.value(COLOR_RS))
+    )
+    rs_dots = (
+        alt.Chart(rs_df)
+        .mark_circle(filled=True)
         .encode(
-            x=chart_x_encoding(),
+            x=x_enc,
             y=rs_y,
             color=alt.value(COLOR_RS),
+            size=hover_point_size(hover),
             tooltip=[
                 DATE_TOOLTIP,
-                alt.Tooltip("RS지수:Q", title="RS지수", format=",.0f"),
+                alt.Tooltip("구분:N", title="구분"),
+                alt.Tooltip("RS지수:Q", title="값", format=",.0f"),
             ],
         )
+    )
+    rs_hit = (
+        alt.Chart(rs_df)
+        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
+        .encode(x=x_enc, y=rs_y)
+        .add_params(hover)
     )
 
     legend_proxy = (
@@ -882,7 +1019,15 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     )
 
     chart = finalize_chart(
-        alt.layer(kospi_line, rs_line, legend_proxy)
+        alt.layer(
+            kospi_line,
+            rs_line,
+            kospi_dots,
+            rs_dots,
+            kospi_hit,
+            rs_hit,
+            legend_proxy,
+        )
         .add_params(zoom)
         .resolve_scale(y="independent")
         .properties(height=CHART_HEIGHT)
@@ -917,6 +1062,10 @@ def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
     )
     y_scale = alt.Scale(domain=[0, 1000], nice=False)
     zoom = chart_zoom()
+    hover = chart_point_hover()
+    x_enc = chart_x_encoding()
+    kospi_df = norm_df.assign(구분="코스피")
+    rs_df = norm_df.assign(구분="RS지수")
 
     kospi_y = alt.Y(
         "코스피:Q",
@@ -932,31 +1081,57 @@ def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
     )
 
     kospi_line = (
-        alt.Chart(norm_df.assign(구분="코스피"))
+        alt.Chart(kospi_df)
         .mark_line(strokeWidth=1)
+        .encode(x=x_enc, y=kospi_y, color=alt.value(COLOR_KOSPI))
+    )
+    kospi_dots = (
+        alt.Chart(kospi_df)
+        .mark_circle(filled=True)
         .encode(
-            x=chart_x_encoding(),
+            x=x_enc,
             y=kospi_y,
             color=alt.value(COLOR_KOSPI),
+            size=hover_point_size(hover),
             tooltip=[
                 DATE_TOOLTIP,
-                alt.Tooltip("코스피:Q", title="코스피(정규화)", format=",.1f"),
+                alt.Tooltip("구분:N", title="구분"),
+                alt.Tooltip("코스피:Q", title="값", format=",.1f"),
             ],
         )
     )
+    kospi_hit = (
+        alt.Chart(kospi_df)
+        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
+        .encode(x=x_enc, y=kospi_y)
+        .add_params(hover)
+    )
 
     rs_line = (
-        alt.Chart(norm_df.assign(구분="RS지수"))
+        alt.Chart(rs_df)
         .mark_line(strokeWidth=1)
+        .encode(x=x_enc, y=rs_y, color=alt.value(COLOR_RS))
+    )
+    rs_dots = (
+        alt.Chart(rs_df)
+        .mark_circle(filled=True)
         .encode(
-            x=chart_x_encoding(),
+            x=x_enc,
             y=rs_y,
             color=alt.value(COLOR_RS),
+            size=hover_point_size(hover),
             tooltip=[
                 DATE_TOOLTIP,
-                alt.Tooltip("RS지수:Q", title="RS지수(정규화)", format=",.1f"),
+                alt.Tooltip("구분:N", title="구분"),
+                alt.Tooltip("RS지수:Q", title="값", format=",.1f"),
             ],
         )
+    )
+    rs_hit = (
+        alt.Chart(rs_df)
+        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
+        .encode(x=x_enc, y=rs_y)
+        .add_params(hover)
     )
 
     legend_proxy = (
@@ -968,7 +1143,15 @@ def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
     )
 
     chart = finalize_chart(
-        alt.layer(kospi_line, rs_line, legend_proxy)
+        alt.layer(
+            kospi_line,
+            rs_line,
+            kospi_dots,
+            rs_dots,
+            kospi_hit,
+            rs_hit,
+            legend_proxy,
+        )
         .add_params(zoom)
         .resolve_scale(y="independent")
         .properties(height=CHART_HEIGHT)
@@ -979,6 +1162,7 @@ def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
 def render_ma_chart(chart_df: pd.DataFrame) -> None:
     """종가·이동평균선 차트"""
     zoom = chart_zoom()
+    hover = chart_point_hover()
     all_values = pd.concat([chart_df[col] for col in MA_LABELS], ignore_index=True)
     y_scale = alt.Scale(domain=y_domain(all_values), nice=False)
     price_y = alt.Y(
@@ -991,6 +1175,7 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
         domain=MA_LABELS,
         range=[MA_COLORS[label] for label in MA_LABELS],
     )
+    x_enc = chart_x_encoding()
 
     long_df = chart_df.melt(
         id_vars=["date"],
@@ -1005,9 +1190,19 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
         alt.Chart(ma_only)
         .mark_line(strokeWidth=1)
         .encode(
-            x=chart_x_encoding(),
+            x=x_enc,
             y=price_y,
             color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
+        )
+    )
+    ma_dots = (
+        alt.Chart(ma_only)
+        .mark_circle(filled=True)
+        .encode(
+            x=x_enc,
+            y=price_y,
+            color=alt.Color("구분:N", scale=color_scale, legend=None),
+            size=hover_point_size(hover),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("구분:N", title="구분"),
@@ -1020,18 +1215,35 @@ def render_ma_chart(chart_df: pd.DataFrame) -> None:
         alt.Chart(close_only)
         .mark_line(strokeWidth=3)
         .encode(
-            x=chart_x_encoding(),
+            x=x_enc,
             y=price_y,
             color=alt.Color("구분:N", scale=color_scale, legend=None),
+        )
+    )
+    close_dots = (
+        alt.Chart(close_only)
+        .mark_circle(filled=True)
+        .encode(
+            x=x_enc,
+            y=price_y,
+            color=alt.Color("구분:N", scale=color_scale, legend=None),
+            size=hover_point_size(hover),
             tooltip=[
                 DATE_TOOLTIP,
-                alt.Tooltip("값:Q", title="종가", format=",.0f"),
+                alt.Tooltip("구분:N", title="구분"),
+                alt.Tooltip("값:Q", title="값", format=",.0f"),
             ],
         )
     )
+    hit = (
+        alt.Chart(long_df)
+        .mark_circle(opacity=0.01, size=HOVER_HIT_SIZE)
+        .encode(x=x_enc, y=price_y)
+        .add_params(hover)
+    )
 
     chart = finalize_chart(
-        alt.layer(ma_lines, close_line)
+        alt.layer(ma_lines, close_line, ma_dots, close_dots, hit)
         .add_params(zoom)
         .properties(height=CHART_HEIGHT)
     )
@@ -1182,6 +1394,7 @@ def render_stock_detail(data: dict) -> None:
 
 def render_page() -> None:
     """종목분석 Streamlit 페이지"""
+    inject_chart_hover_ui()
     st.caption("종목 선택 시 150일 분석 그리드 및 차트를 표시합니다")
 
     render_stock_list_grid()
