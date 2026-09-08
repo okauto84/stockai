@@ -834,7 +834,7 @@ def render_close_chart(chart_df: pd.DataFrame) -> None:
 
 
 def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
-    """코스피(좌측)·RS지수(우측) 이중 축 차트"""
+    """코스피(좌측·빨강)·RS지수(우측·파랑) 이중 축 차트"""
     color_scale = alt.Scale(
         domain=["코스피", "RS지수"],
         range=[COLOR_KOSPI, COLOR_RS],
@@ -844,13 +844,14 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
     kospi_y = y_encoding("코스피", "코스피", chart_df["코스피"], orient="left")
     rs_y = y_encoding("RS지수", "RS지수", chart_df["RS지수"], orient="right")
 
+    # 레이어별 Color 스케일 추론으로 색이 뒤바뀌지 않도록 stroke 색을 강제 고정
     kospi_line = (
         alt.Chart(chart_df.assign(구분="코스피"))
         .mark_line(strokeWidth=1)
         .encode(
             x=chart_x_encoding(),
             y=kospi_y,
-            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
+            color=alt.value(COLOR_KOSPI),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("코스피:Q", title="코스피", format=",.0f"),
@@ -864,7 +865,7 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
         .encode(
             x=chart_x_encoding(),
             y=rs_y,
-            color=alt.Color("구분:N", scale=color_scale, legend=None),
+            color=alt.value(COLOR_RS),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("RS지수:Q", title="RS지수", format=",.0f"),
@@ -872,8 +873,16 @@ def render_kospi_rs_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
+    legend_proxy = (
+        alt.Chart(pd.DataFrame({"구분": ["코스피", "RS지수"]}))
+        .mark_point(opacity=0, size=0)
+        .encode(
+            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
+        )
+    )
+
     chart = finalize_chart(
-        alt.layer(kospi_line, rs_line)
+        alt.layer(kospi_line, rs_line, legend_proxy)
         .add_params(zoom)
         .resolve_scale(y="independent")
         .properties(height=CHART_HEIGHT)
@@ -900,7 +909,7 @@ def build_kospi_rs_normalized_df(chart_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
-    """코스피·RS지수 0~1000 정규화 이중 축 차트 (원본과 동일 스타일)"""
+    """코스피·RS지수 0~1000 정규화 이중 축 차트 (코스피=빨강, RS=파랑 고정)"""
     norm_df = build_kospi_rs_normalized_df(chart_df)
     color_scale = alt.Scale(
         domain=["코스피", "RS지수"],
@@ -928,7 +937,7 @@ def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
         .encode(
             x=chart_x_encoding(),
             y=kospi_y,
-            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
+            color=alt.value(COLOR_KOSPI),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("코스피:Q", title="코스피(정규화)", format=",.1f"),
@@ -942,7 +951,7 @@ def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
         .encode(
             x=chart_x_encoding(),
             y=rs_y,
-            color=alt.Color("구분:N", scale=color_scale, legend=None),
+            color=alt.value(COLOR_RS),
             tooltip=[
                 DATE_TOOLTIP,
                 alt.Tooltip("RS지수:Q", title="RS지수(정규화)", format=",.1f"),
@@ -950,8 +959,16 @@ def render_kospi_rs_normalized_chart(chart_df: pd.DataFrame) -> None:
         )
     )
 
+    legend_proxy = (
+        alt.Chart(pd.DataFrame({"구분": ["코스피", "RS지수"]}))
+        .mark_point(opacity=0, size=0)
+        .encode(
+            color=alt.Color("구분:N", scale=color_scale, legend=LEGEND_BOTTOM),
+        )
+    )
+
     chart = finalize_chart(
-        alt.layer(kospi_line, rs_line)
+        alt.layer(kospi_line, rs_line, legend_proxy)
         .add_params(zoom)
         .resolve_scale(y="independent")
         .properties(height=CHART_HEIGHT)
