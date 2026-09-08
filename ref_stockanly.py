@@ -444,15 +444,8 @@ def filter_stock_list(
         filtered_df = filtered_df[filtered_df["섹터"] == sector_filter]
 
     if keyword:
-        keyword_upper = keyword.upper()
-        elements_text = filtered_df["구성종목목록"].map(
-            lambda items: ", ".join(items) if isinstance(items, list) else ""
-        )
         filtered_df = filtered_df[
-            filtered_df["종목코드"].str.contains(keyword_upper, na=False)
-            | filtered_df["종목명"].str.contains(keyword, na=False)
-            | filtered_df["야후심볼"].str.contains(keyword_upper, na=False)
-            | elements_text.str.contains(keyword, na=False)
+            filtered_df["종목명"].str.contains(keyword, na=False)
         ]
 
     return filtered_df.reset_index(drop=True)
@@ -561,7 +554,7 @@ def render_stock_list_grid() -> None:
     with search_col:
         keyword = st.text_input(
             "종목 검색",
-            placeholder="종목코드 또는 종목명 검색",
+            placeholder="종목명 검색",
             key="stock_list_keyword_ui",
         )
     with btn_col:
