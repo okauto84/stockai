@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-09T12:46:11Z",
+  "updated_at": "2026-09-10T07:47:45Z",
   "sector": "데이터센터",
   "source": "yfinance + ref_stockanly 150일 분석 그리드 로직",
   "analysis_days": 150,
@@ -22,8 +22,8 @@
     "failed": 0,
     "updated": 1,
     "skipped": 0,
-    "compare_from": "2026-09-07",
-    "compare_to": "2026-09-09",
+    "compare_from": "2026-09-08",
+    "compare_to": "2026-09-10",
     "lookback_days": 2
   },
   "items": [
@@ -353,6 +353,19 @@
           "RS지수": 99.7,
           "MA10": 13044.5,
           "MA20": 12921.25,
+          "MA30": null,
+          "MA50": null,
+          "MA100": null,
+          "MA150": null
+        },
+        {
+          "날짜": "2026-09-10",
+          "종가": 13390.0,
+          "거래량": 2513,
+          "코스피": 7033.92,
+          "RS지수": 99.28,
+          "MA10": 13051.0,
+          "MA20": 12960.0,
           "MA30": null,
           "MA50": null,
           "MA100": null,
