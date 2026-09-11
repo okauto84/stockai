@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-10T07:45:59Z",
+  "updated_at": "2026-09-11T02:05:55Z",
   "sector": "광통신",
   "source": "yfinance + ref_stockanly 150일 분석 그리드 로직",
   "analysis_days": 150,
@@ -22,8 +22,8 @@
     "failed": 0,
     "updated": 1,
     "skipped": 0,
-    "compare_from": "2026-09-08",
-    "compare_to": "2026-09-10",
+    "compare_from": "2026-09-09",
+    "compare_to": "2026-09-11",
     "lookback_days": 2
   },
   "items": [
@@ -562,6 +562,19 @@
           "MA10": 10563.0,
           "MA20": 10767.25,
           "MA30": 10633.67,
+          "MA50": null,
+          "MA100": null,
+          "MA150": null
+        },
+        {
+          "날짜": "2026-09-11",
+          "종가": 11345.0,
+          "거래량": 34161,
+          "코스피": 6861.65,
+          "RS지수": 95.91,
+          "MA10": 10611.5,
+          "MA20": 10747.25,
+          "MA30": 10751.67,
           "MA50": null,
           "MA100": null,
           "MA150": null
